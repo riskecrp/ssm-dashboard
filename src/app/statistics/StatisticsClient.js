@@ -2,15 +2,55 @@
 import { useState, useMemo } from 'react';
 import { manageTask, logSpokenTo } from '../actions';
 
+// Extracted Time Filter UI Component
+function TimeFilter({ mode, setMode, month, setMonth, range, setRange, availableMonths, dropKey, openDropdown, setOpenDropdown }) {
+  return (
+    <div className="flex items-center gap-2 bg-black/40 p-1.5 rounded-xl border border-white/5">
+      <div className="relative" onClick={(e) => e.stopPropagation()}>
+        <div onClick={() => setOpenDropdown(openDropdown === `${dropKey}-mode` ? null : `${dropKey}-mode`)} className="bg-zinc-800/50 hover:bg-zinc-800 border border-white/5 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg cursor-pointer flex items-center gap-2">
+          <span>{mode}</span><span className="text-[8px] text-zinc-500">▼</span>
+        </div>
+        {openDropdown === `${dropKey}-mode` && (
+          <div className="absolute top-full right-0 mt-1 w-24 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl py-1 z-[110]">
+            {['Overall', 'Monthly', 'Range'].map(m => (<div key={m} onClick={() => { setMode(m); setOpenDropdown(null); }} className="px-3 py-2 text-[10px] font-bold cursor-pointer transition-colors text-zinc-400 hover:bg-white/5 hover:text-white uppercase">{m}</div>))}
+          </div>
+        )}
+      </div>
+      {mode === 'Monthly' && (
+        <div className="relative" onClick={(e) => e.stopPropagation()}>
+          <div onClick={() => setOpenDropdown(openDropdown === `${dropKey}-month` ? null : `${dropKey}-month`)} className="bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-[10px] font-bold px-3 py-1.5 rounded-lg cursor-pointer flex items-center gap-2">
+            <span>{month}</span><span className="text-[8px] text-indigo-400">▼</span>
+          </div>
+          {openDropdown === `${dropKey}-month` && (
+            <div className="absolute top-full right-0 mt-1 w-28 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl py-1 max-h-48 overflow-y-auto custom-scrollbar z-[110]">
+              {availableMonths.map(m => (<div key={m} onClick={() => { setMonth(m); setOpenDropdown(null); }} className="px-3 py-2 text-[10px] font-bold cursor-pointer transition-colors text-zinc-400 hover:bg-white/5 hover:text-white uppercase">{m}</div>))}
+            </div>
+          )}
+        </div>
+      )}
+      {mode === 'Range' && (
+        <div className="flex items-center gap-1 bg-zinc-800/50 border border-white/5 rounded-lg px-2 py-1">
+          <input type="date" style={{ colorScheme: 'dark' }} className="bg-transparent text-indigo-300 text-[9px] font-bold uppercase outline-none w-20" value={range.start} onChange={e => setRange({...range, start: e.target.value})} />
+          <span className="text-zinc-600">-</span>
+          <input type="date" style={{ colorScheme: 'dark' }} className="bg-transparent text-indigo-300 text-[9px] font-bold uppercase outline-none w-20" value={range.end} onChange={e => setRange({...range, end: e.target.value})} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function StatisticsClient({ initialData }) {
   const [openDropdown, setOpenDropdown] = useState(null);
   
-  // Global Time Filters
-  const [timeMode, setTimeMode] = useState('Monthly'); 
-  const [tpMonth, setTpMonth] = useState('');
-  const [tpRange, setTpRange] = useState({ start: '', end: '' });
+  // Independent Time Filters
+  const [lbTimeMode, setLbTimeMode] = useState('Monthly'); 
+  const [lbMonth, setLbMonth] = useState('');
+  const [lbRange, setLbRange] = useState({ start: '', end: '' });
 
-  // Independent Comparison Time Filters
+  const [rankTimeMode, setRankTimeMode] = useState('Monthly'); 
+  const [rankMonth, setRankMonth] = useState('');
+  const [rankRange, setRankRange] = useState({ start: '', end: '' });
+
   const [compTimeMode, setCompTimeMode] = useState('Monthly');
   const [compMonth, setCompMonth] = useState('');
   const [compRange, setCompRange] = useState({ start: '', end: '' });
@@ -19,8 +59,6 @@ export default function StatisticsClient({ initialData }) {
   const [compareSelected, setCompareSelected] = useState([]);
   const [processing, setProcessing] = useState(null);
   const [exceptionModal, setExceptionModal] = useState({ isOpen: false, name: "", reason: "" });
-
-  // State to track and hide handled users in the Metric Evaluator
   const [dismissedEvaluations, setDismissedEvaluations] = useState([]);
 
   const activeStaff = initialData.filter(s => s.isActive);
@@ -37,45 +75,53 @@ export default function StatisticsClient({ initialData }) {
     initialData.forEach(s => s.history.forEach(h => months.add(h.month)));
     const sorted = Array.from(months).sort((a, b) => new Date(b) - new Date(a));
     if (sorted.length > 0) {
-      if (!tpMonth) setTpMonth(sorted[0]);
+      if (!lbMonth) setLbMonth(sorted[0]);
+      if (!rankMonth) setRankMonth(sorted[0]);
       if (!compMonth) setCompMonth(sorted[0]);
     }
     return sorted;
-  }, [initialData, tpMonth, compMonth]);
+  }, [initialData, lbMonth, rankMonth, compMonth]);
 
   const mostRecentMonth = availableMonths[0];
 
   // METRIC EVALUATOR
   const missedQuotaEvaluations = useMemo(() => {
     if (!mostRecentMonth) return [];
+    const monthStr = mostRecentMonth.substring(3); // extracts 'Feb/2026' from '01/Feb/2026'
+    
     return activeStaff.map(s => {
-       // Instantly hide if they have been handled in this session
        if (dismissedEvaluations.includes(s.name)) return null;
 
        const h = s.history.find(x => x.month === mostRecentMonth);
        if (!h) return null;
        const igTarget = Math.max(0, 30 - (h.loaDays || 0));
        const isSenior = s.rank === 'Senior Support';
+       const forumTarget = isSenior ? 5 : 0;
+
        let met = h.newIG >= igTarget;
-       if (isSenior && h.newForum < 5) met = false;
+       if (isSenior && h.newForum < forumTarget) met = false;
        
        if (h.strike > 0) return null; 
        
-       return { ...s, monthData: h, metQuota: met, igTarget, forumTarget: isSenior ? 5 : 0 };
+       const hasException = s.spokenToLogs?.some(log => log.note.includes(`METRIC EXCEPTION (${monthStr})`));
+       if (hasException) return null;
+
+       return { ...s, monthData: h, metQuota: met, igTarget, forumTarget };
     }).filter(s => s && !s.metQuota);
   }, [activeStaff, mostRecentMonth, dismissedEvaluations]);
 
   const handleConfirmStrike = async (staffName) => {
     setProcessing(`strike-${staffName}`);
     await manageTask({ action: 'AddBatch', tasksArray: [{ id: Date.now().toString(), title: `Issue Strike - ${staffName}`, description: `Missed Metric Quota for ${mostRecentMonth}`, target: 'SSM' }] });
-    setDismissedEvaluations(prev => [...prev, staffName]); // Hide from view instantly
+    setDismissedEvaluations(prev => [...prev, staffName]); 
     setProcessing(null);
   };
 
   const submitException = async () => {
     setProcessing('exception');
-    await logSpokenTo({ name: exceptionModal.name, note: `METRIC EXCEPTION: ${exceptionModal.reason}` });
-    setDismissedEvaluations(prev => [...prev, exceptionModal.name]); // Hide from view instantly
+    const monthStr = mostRecentMonth.substring(3);
+    await logSpokenTo({ name: exceptionModal.name, note: `METRIC EXCEPTION (${monthStr}): ${exceptionModal.reason}` });
+    setDismissedEvaluations(prev => [...prev, exceptionModal.name]); 
     setProcessing(null);
     setExceptionModal({ isOpen: false, name: "", reason: "" });
   };
@@ -83,32 +129,32 @@ export default function StatisticsClient({ initialData }) {
   // RANK RELIABILITY
   const rankStats = useMemo(() => {
     const stats = {
-      support: { sixMo: { met: 0, total: 0, igSum: 0 }, life: { met: 0, total: 0, igSum: 0 } },
-      senior: { sixMo: { met: 0, total: 0, igSum: 0, forumSum: 0 }, life: { met: 0, total: 0, igSum: 0, forumSum: 0 } }
+      support: { met: 0, total: 0, igSum: 0, forumSum: 0 },
+      senior: { met: 0, total: 0, igSum: 0, forumSum: 0 }
     };
-    const sixMonthsAgo = new Date();
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
     initialData.forEach(staff => {
       const isSenior = staff.rank === 'Senior Support';
-      staff.history.forEach(h => {
-        const isRecent = h.timestamp >= sixMonthsAgo.getTime();
+      const category = isSenior ? stats.senior : stats.support;
+      
+      let validHistory = [];
+      if (rankTimeMode === 'Overall') validHistory = staff.history;
+      else if (rankTimeMode === 'Monthly') validHistory = staff.history.filter(h => h.month === rankMonth);
+      else if (rankTimeMode === 'Range') {
+        const startMs = new Date(rankRange.start).getTime() || 0;
+        const endMs = new Date(rankRange.end).getTime() || Infinity;
+        validHistory = staff.history.filter(h => h.timestamp >= startMs && h.timestamp <= endMs);
+      }
+
+      validHistory.forEach(h => {
         const igTarget = Math.max(0, 30 - (h.loaDays || 0));
         let met = h.newIG >= igTarget;
         if (isSenior && h.newForum < 5) met = false;
 
-        const category = isSenior ? stats.senior : stats.support;
-        category.life.total++;
-        if (met) category.life.met++;
-        category.life.igSum += h.newIG;
-        if (isSenior) category.life.forumSum += h.newForum;
-
-        if (isRecent) {
-          category.sixMo.total++;
-          if (met) category.sixMo.met++;
-          category.sixMo.igSum += h.newIG;
-          if (isSenior) category.sixMo.forumSum += h.newForum;
-        }
+        category.total++;
+        if (met) category.met++;
+        category.igSum += h.newIG;
+        if (isSenior) category.forumSum += h.newForum;
       });
     });
 
@@ -116,10 +162,10 @@ export default function StatisticsClient({ initialData }) {
     const calcAvg = (sum, total) => total > 0 ? (sum / total).toFixed(1) : 0;
 
     return {
-      support: { rel6: calcRel(stats.support.sixMo), relLife: calcRel(stats.support.life), avgIG: calcAvg(stats.support.life.igSum, stats.support.life.total) },
-      senior: { rel6: calcRel(stats.senior.sixMo), relLife: calcRel(stats.senior.life), avgIG: calcAvg(stats.senior.life.igSum, stats.senior.life.total), avgForum: calcAvg(stats.senior.life.forumSum, stats.senior.life.total) }
+      support: { rel: calcRel(stats.support), avgIG: calcAvg(stats.support.igSum, stats.support.total) },
+      senior: { rel: calcRel(stats.senior), avgIG: calcAvg(stats.senior.igSum, stats.senior.total), avgForum: calcAvg(stats.senior.forumSum, stats.senior.total) }
     };
-  }, [initialData]);
+  }, [initialData, rankTimeMode, rankMonth, rankRange]);
 
   const lifetimeTotals = useMemo(() => {
     return initialData.reduce((acc, staff) => {
@@ -131,14 +177,14 @@ export default function StatisticsClient({ initialData }) {
   const staffPerformance = useMemo(() => {
     return activeStaff.map(s => {
       let ig = 0, forum = 0, discord = 0;
-      if (timeMode === 'Overall') {
+      if (lbTimeMode === 'Overall') {
         ig = s.lifetimeIG; forum = s.lifetimeForum; discord = s.lifetimeDiscord;
-      } else if (timeMode === 'Monthly') {
-        const monthData = s.history.find(h => h.month === tpMonth);
+      } else if (lbTimeMode === 'Monthly') {
+        const monthData = s.history.find(h => h.month === lbMonth);
         if (monthData) { ig = monthData.newIG; forum = monthData.newForum; discord = monthData.newDiscord; }
-      } else if (timeMode === 'Range') {
-        const startMs = new Date(tpRange.start).getTime() || 0;
-        const endMs = new Date(tpRange.end).getTime() || Infinity;
+      } else if (lbTimeMode === 'Range') {
+        const startMs = new Date(lbRange.start).getTime() || 0;
+        const endMs = new Date(lbRange.end).getTime() || Infinity;
         const validHistory = s.history.filter(h => h.timestamp >= startMs && h.timestamp <= endMs);
         ig = validHistory.reduce((sum, h) => sum + h.newIG, 0);
         forum = validHistory.reduce((sum, h) => sum + h.newForum, 0);
@@ -146,7 +192,7 @@ export default function StatisticsClient({ initialData }) {
       }
       return { name: s.name, ig, forum, discord, total: ig + forum + discord };
     });
-  }, [activeStaff, timeMode, tpMonth, tpRange]);
+  }, [activeStaff, lbTimeMode, lbMonth, lbRange]);
 
   const topIG = [...staffPerformance].sort((a, b) => b.ig - a.ig).slice(0, 5).filter(s => s.ig > 0);
   const topForum = [...staffPerformance].sort((a, b) => b.forum - a.forum).slice(0, 5).filter(s => s.forum > 0);
@@ -159,9 +205,10 @@ export default function StatisticsClient({ initialData }) {
     const isSenior = data.rank === 'Senior Support';
     const historyWithQuota = data.history.slice(0, 6).map(h => {
       const igTarget = Math.max(0, 30 - (h.loaDays || 0));
+      const forumTarget = isSenior ? 5 : 0;
       let met = h.newIG >= igTarget;
-      if (isSenior && h.newForum < 5) met = false;
-      return { ...h, metQuota: met, igTarget, forumTarget: isSenior ? 5 : 0 };
+      if (isSenior && h.newForum < forumTarget) met = false;
+      return { ...h, metQuota: met, igTarget, forumTarget, isSenior };
     });
     const metCount = historyWithQuota.filter(h => h.metQuota).length;
     const reliability = historyWithQuota.length > 0 ? Math.round((metCount / historyWithQuota.length) * 100) : 0;
@@ -174,6 +221,7 @@ export default function StatisticsClient({ initialData }) {
     return initialData.map(s => {
       let ig = 0, forum = 0, discord = 0, metCount = 0, totalEligible = 0;
       const isSenior = s.rank === 'Senior Support';
+      const forumTarget = isSenior ? 5 : 0;
       
       if (compTimeMode === 'Overall') {
         ig = s.lifetimeIG; forum = s.lifetimeForum; discord = s.lifetimeDiscord;
@@ -181,7 +229,7 @@ export default function StatisticsClient({ initialData }) {
            totalEligible++;
            const igTarget = Math.max(0, 30 - (h.loaDays || 0));
            let met = h.newIG >= igTarget;
-           if (isSenior && h.newForum < 5) met = false;
+           if (isSenior && h.newForum < forumTarget) met = false;
            if (met) metCount++;
         });
       } else if (compTimeMode === 'Monthly') {
@@ -191,7 +239,7 @@ export default function StatisticsClient({ initialData }) {
            totalEligible = 1;
            const igTarget = Math.max(0, 30 - (h.loaDays || 0));
            let met = h.newIG >= igTarget;
-           if (isSenior && h.newForum < 5) met = false;
+           if (isSenior && h.newForum < forumTarget) met = false;
            if (met) metCount = 1;
         }
       } else if (compTimeMode === 'Range') {
@@ -203,7 +251,7 @@ export default function StatisticsClient({ initialData }) {
            totalEligible++;
            const igTarget = Math.max(0, 30 - (h.loaDays || 0));
            let met = h.newIG >= igTarget;
-           if (isSenior && h.newForum < 5) met = false;
+           if (isSenior && h.newForum < forumTarget) met = false;
            if (met) metCount++;
         });
       }
@@ -226,39 +274,10 @@ export default function StatisticsClient({ initialData }) {
         <div className="absolute bottom-[10%] right-[-5%] w-[30%] h-[30%] bg-indigo-500/5 rounded-full blur-[100px]" />
       </div>
 
-      <header className="relative z-[100] bg-zinc-900/60 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
-        <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-8">
-          <div><h1 className="text-4xl font-light text-white tracking-tight">Performance Statistics</h1><p className="text-[10px] text-zinc-500 uppercase tracking-[0.2em] mt-2 font-bold font-mono">Network Intelligence Hub</p></div>
-          <div className="flex flex-col sm:flex-row items-center gap-4 bg-black/40 p-2 rounded-2xl border border-white/5 shadow-inner">
-             <div className="text-[10px] text-zinc-500 uppercase tracking-widest px-4 font-bold">Global Range:</div>
-             <div className="flex flex-wrap items-center gap-2">
-                <div className="relative" onClick={(e) => e.stopPropagation()}>
-                  <div onClick={() => setOpenDropdown(openDropdown === 'timeMode' ? null : 'timeMode')} className="bg-zinc-800/50 hover:bg-zinc-800 border border-white/5 text-white text-xs font-bold px-5 py-2.5 rounded-xl cursor-pointer flex items-center gap-3 transition-all"><span>{timeMode === 'Overall' ? 'Lifetime' : timeMode === 'Monthly' ? 'Monthly' : 'Range'}</span><span className="text-[8px] text-zinc-500">▼</span></div>
-                  {openDropdown === 'timeMode' && (
-                    <div className="absolute top-full left-0 mt-2 w-48 bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl py-2 overflow-hidden z-[110]">
-                      {['Overall', 'Monthly', 'Range'].map(mode => (<div key={mode} onClick={() => { setTimeMode(mode); setOpenDropdown(null); }} className={`px-5 py-3 text-xs font-bold cursor-pointer transition-colors ${timeMode === mode ? 'bg-indigo-500/20 text-indigo-300' : 'text-zinc-400 hover:bg-white/5 hover:text-white'}`}>{mode}</div>))}
-                    </div>
-                  )}
-                </div>
-                {timeMode === 'Monthly' && (
-                  <div className="relative" onClick={(e) => e.stopPropagation()}>
-                    <div onClick={() => setOpenDropdown(openDropdown === 'tpMonth' ? null : 'tpMonth')} className="bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 text-indigo-300 text-xs font-bold px-5 py-2.5 rounded-xl cursor-pointer flex items-center gap-3 transition-all"><span>{tpMonth}</span><span className="text-[8px] text-indigo-400">▼</span></div>
-                    {openDropdown === 'tpMonth' && (
-                      <div className="absolute top-full right-0 mt-2 w-40 bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl py-2 max-h-64 overflow-y-auto custom-scrollbar z-[110]">
-                        {availableMonths.map(m => (<div key={m} onClick={() => { setTpMonth(m); setOpenDropdown(null); }} className={`px-5 py-3 text-xs font-bold cursor-pointer transition-colors ${tpMonth === m ? 'bg-indigo-500/20 text-indigo-300' : 'text-zinc-400 hover:bg-white/5 hover:text-white'}`}>{m}</div>))}
-                      </div>
-                    )}
-                  </div>
-                )}
-                {timeMode === 'Range' && (
-                  <div className="flex items-center gap-2 bg-zinc-800/50 border border-white/5 rounded-xl px-4 py-2">
-                    <input type="date" style={{ colorScheme: 'dark' }} className="bg-transparent text-indigo-300 text-[10px] font-bold uppercase outline-none" value={tpRange.start} onChange={e => setTpRange({...tpRange, start: e.target.value})} />
-                    <span className="text-zinc-600 font-bold">-</span>
-                    <input type="date" style={{ colorScheme: 'dark' }} className="bg-transparent text-indigo-300 text-[10px] font-bold uppercase outline-none" value={tpRange.end} onChange={e => setTpRange({...tpRange, end: e.target.value})} />
-                  </div>
-                )}
-             </div>
-          </div>
+      <header className="relative z-[100] bg-zinc-900/60 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+        <div>
+          <h1 className="text-4xl font-light text-white tracking-tight">Performance Statistics</h1>
+          <p className="text-[10px] text-zinc-500 uppercase tracking-[0.2em] mt-2 font-bold font-mono">Network Intelligence Hub</p>
         </div>
       </header>
 
@@ -281,7 +300,9 @@ export default function StatisticsClient({ initialData }) {
                   </div>
                   <div className="flex justify-between text-[10px] font-mono text-zinc-400 bg-white/5 p-2 rounded-lg">
                     <span>IG: <span className="text-red-400 font-bold">{s.monthData.newIG}</span>/{s.igTarget}</span>
-                    <span>FR: <span className={s.monthData.newForum < s.forumTarget ? 'text-red-400 font-bold' : 'text-amber-400 font-bold'}>{s.monthData.newForum}</span>/{s.forumTarget}</span>
+                    {s.rank === 'Senior Support' && (
+                      <span>FR: <span className={s.monthData.newForum < s.forumTarget ? 'text-red-400 font-bold' : 'text-amber-400 font-bold'}>{s.monthData.newForum}</span>/{s.forumTarget}</span>
+                    )}
                   </div>
                   <div className="flex gap-2 mt-1">
                     <button disabled={processing === `strike-${s.name}`} onClick={() => handleConfirmStrike(s.name)} className="flex-1 py-2 bg-red-600/80 hover:bg-red-500 rounded-lg text-[9px] font-bold text-white uppercase tracking-widest transition-all shadow-md">{processing === `strike-${s.name}` ? '...' : 'Strike Task'}</button>
@@ -295,7 +316,10 @@ export default function StatisticsClient({ initialData }) {
 
         {/* COMBINED LEADERBOARD */}
         <section className="bg-zinc-900/60 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 shadow-xl">
-           <h2 className="text-2xl font-light text-white tracking-tight mb-6 border-b border-white/5 pb-4">Network Leaderboards</h2>
+           <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-6 border-b border-white/5 pb-4">
+             <h2 className="text-2xl font-light text-white tracking-tight">Network Leaderboards</h2>
+             <TimeFilter mode={lbTimeMode} setMode={setLbTimeMode} month={lbMonth} setMonth={setLbMonth} range={lbRange} setRange={setLbRange} availableMonths={availableMonths} dropKey="lb" openDropdown={openDropdown} setOpenDropdown={setOpenDropdown} />
+           </div>
            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
              <LeaderboardColumn title="In-Game Reports" data={topIG} color="text-emerald-400" field="ig" />
              <LeaderboardColumn title="Forum Reports" data={topForum} color="text-amber-400" field="forum" />
@@ -309,9 +333,12 @@ export default function StatisticsClient({ initialData }) {
         
         {/* RANK RELIABILITY (1 Col) */}
         <section className="xl:col-span-1 bg-zinc-900/60 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 shadow-xl flex flex-col gap-6">
-           <div className="border-b border-white/5 pb-4 mb-2">
-              <h2 className="text-2xl font-light text-white tracking-tight">Rank Audit</h2>
-              <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-1 font-bold">Structural Benchmark</p>
+           <div className="flex flex-col xl:flex-row justify-between items-start xl:items-end gap-4 border-b border-white/5 pb-4 mb-2">
+              <div>
+                <h2 className="text-2xl font-light text-white tracking-tight">Rank Audit</h2>
+                <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-1 font-bold">Structural Benchmark</p>
+              </div>
+              <TimeFilter mode={rankTimeMode} setMode={setRankTimeMode} month={rankMonth} setMonth={setRankMonth} range={rankRange} setRange={setRankRange} availableMonths={availableMonths} dropKey="rank" openDropdown={openDropdown} setOpenDropdown={setOpenDropdown} />
            </div>
            <RankCard title="Support Personnel" stats={rankStats.support} color="text-emerald-400" glow="bg-emerald-500/5" logic="30 In-Game Reports" />
            <RankCard title="Senior Support" stats={rankStats.senior} color="text-indigo-400" glow="bg-indigo-500/5" logic="30 IG & 5 Forum" />
@@ -377,40 +404,8 @@ export default function StatisticsClient({ initialData }) {
                <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-2 font-bold font-mono">1-to-1 Evaluation</p>
             </div>
             
-            {/* INDEPENDENT TIME FILTER & SELECTOR */}
             <div className="flex flex-col sm:flex-row gap-4 items-center">
-              <div className="flex items-center gap-2 bg-black/40 p-2 rounded-xl border border-white/5">
-                 <div className="relative" onClick={(e) => e.stopPropagation()}>
-                    <div onClick={() => setOpenDropdown(openDropdown === 'compTimeMode' ? null : 'compTimeMode')} className="bg-zinc-800/50 border border-white/5 text-white text-[10px] font-bold uppercase px-3 py-2 rounded-lg cursor-pointer flex items-center gap-2">
-                      <span>{compTimeMode}</span><span className="text-[8px] text-zinc-500">▼</span>
-                    </div>
-                    {openDropdown === 'compTimeMode' && (
-                      <div className="absolute top-full left-0 mt-1 w-32 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl py-1 z-[110]">
-                        {['Overall', 'Monthly', 'Range'].map(mode => (<div key={mode} onClick={() => { setCompTimeMode(mode); setOpenDropdown(null); }} className="px-4 py-2 text-[10px] font-bold cursor-pointer transition-colors uppercase text-zinc-400 hover:bg-white/5 hover:text-white">{mode}</div>))}
-                      </div>
-                    )}
-                 </div>
-                 {compTimeMode === 'Monthly' && (
-                    <div className="relative" onClick={(e) => e.stopPropagation()}>
-                      <div onClick={() => setOpenDropdown(openDropdown === 'compMonth' ? null : 'compMonth')} className="bg-indigo-500/10 text-indigo-300 text-[10px] font-bold uppercase px-3 py-2 rounded-lg cursor-pointer flex items-center gap-2 border border-indigo-500/20">
-                        <span>{compMonth}</span><span className="text-[8px] text-indigo-400">▼</span>
-                      </div>
-                      {openDropdown === 'compMonth' && (
-                        <div className="absolute top-full right-0 mt-1 w-32 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl py-1 max-h-48 overflow-y-auto custom-scrollbar z-[110]">
-                          {availableMonths.map(m => (<div key={m} onClick={() => { setCompMonth(m); setOpenDropdown(null); }} className="px-4 py-2 text-[10px] font-bold cursor-pointer transition-colors text-zinc-400 hover:bg-white/5 hover:text-white uppercase">{m}</div>))}
-                        </div>
-                      )}
-                    </div>
-                 )}
-                 {compTimeMode === 'Range' && (
-                    <div className="flex items-center gap-2 bg-zinc-800/50 border border-white/5 rounded-lg px-2 py-1">
-                      <input type="date" style={{ colorScheme: 'dark' }} className="bg-transparent text-indigo-300 text-[9px] font-bold uppercase outline-none" value={compRange.start} onChange={e => setCompRange({...compRange, start: e.target.value})} />
-                      <span className="text-zinc-600">-</span>
-                      <input type="date" style={{ colorScheme: 'dark' }} className="bg-transparent text-indigo-300 text-[9px] font-bold uppercase outline-none" value={compRange.end} onChange={e => setCompRange({...compRange, end: e.target.value})} />
-                    </div>
-                 )}
-              </div>
-
+              <TimeFilter mode={compTimeMode} setMode={setCompTimeMode} month={compMonth} setMonth={setCompMonth} range={compRange} setRange={setCompRange} availableMonths={availableMonths} dropKey="comp" openDropdown={openDropdown} setOpenDropdown={setOpenDropdown} />
               <div className="relative w-full sm:w-auto" onClick={(e) => e.stopPropagation()}>
                 <div onClick={() => setOpenDropdown(openDropdown === 'compareSelect' ? null : 'compareSelect')} className="bg-black/40 border border-white/10 text-white text-xs font-bold px-5 py-2.5 rounded-xl cursor-pointer flex items-center justify-between min-w-[220px] hover:border-indigo-500/50">
                   <span>Add Staff to Compare...</span><span className="text-[8px] text-zinc-500 ml-3">▼</span>
@@ -510,15 +505,9 @@ function RankCard({ title, stats, color, glow, logic }) {
         <h3 className={`text-xl font-light ${color} tracking-tight`}>{title}</h3>
         <p className="text-[8px] text-zinc-500 uppercase tracking-widest mt-1 font-bold">{logic}</p>
       </div>
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        <div className="bg-black/30 border border-white/5 rounded-xl p-4 text-center">
-          <div className="text-[8px] text-zinc-500 uppercase tracking-widest font-black mb-1">6-Mo Hit Rate</div>
-          <div className={`text-2xl font-light ${color}`}>{stats.rel6}%</div>
-        </div>
-        <div className="bg-black/30 border border-white/5 rounded-xl p-4 text-center">
-          <div className="text-[8px] text-zinc-500 uppercase tracking-widest font-black mb-1">Life Hit Rate</div>
-          <div className={`text-2xl font-light text-white opacity-80`}>{stats.relLife}%</div>
-        </div>
+      <div className="bg-black/30 border border-white/5 rounded-xl p-4 text-center mb-6">
+        <div className="text-[8px] text-zinc-500 uppercase tracking-widest font-black mb-1">Timeframe Hit Rate</div>
+        <div className={`text-3xl font-light ${color}`}>{stats.rel}%</div>
       </div>
       <div className="bg-black/20 rounded-xl p-4 border border-white/5 font-mono text-[10px]">
         <div className="flex justify-between text-zinc-400 mb-2"><span>Avg. IG Reports:</span><span className="text-emerald-400">{stats.avgIG}</span></div>
@@ -541,7 +530,9 @@ function HistoryLedger({ title, data }) {
             <div className="text-[10px] text-zinc-400 font-bold font-mono uppercase tracking-widest mb-3">{h.month.substring(3)}</div>
             <div className="space-y-2 font-mono text-[10px]">
               <div className="flex justify-between border-b border-white/5 pb-1"><span className="text-zinc-500">In-Game Reports</span><span className={h.newIG >= h.igTarget ? 'text-emerald-400' : 'text-red-400'}>{h.newIG} <span className="text-zinc-700">/ {h.igTarget}</span></span></div>
-              <div className="flex justify-between border-b border-white/5 pb-1"><span className="text-zinc-500">Forum Reports</span><span className={h.newForum >= h.forumTarget ? 'text-amber-400' : 'text-red-400'}>{h.newForum} <span className="text-zinc-700">/ {h.forumTarget}</span></span></div>
+              {h.isSenior && (
+                <div className="flex justify-between border-b border-white/5 pb-1"><span className="text-zinc-500">Forum Reports</span><span className={h.newForum >= h.forumTarget ? 'text-amber-400' : 'text-red-400'}>{h.newForum} <span className="text-zinc-700">/ {h.forumTarget}</span></span></div>
+              )}
               <div className="flex justify-between"><span className="text-zinc-500">Discord Tickets</span><span className="text-indigo-400">{h.newDiscord}</span></div>
             </div>
           </div>
