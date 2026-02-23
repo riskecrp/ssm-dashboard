@@ -60,7 +60,7 @@ export default function RosterClient({ initialData, managementData }) {
             dateStr: log.timestamp, 
             dateObj: parseSafeDate(log.timestamp), 
             action: isException ? 'METRIC EXCEPTION' : 'Spoken To', 
-            note: isException ? log.note.replace('METRIC EXCEPTION:', '').trim() : log.note 
+            note: isException ? log.note.replace(/METRIC EXCEPTION \(.*?\): |METRIC EXCEPTION: /, '').trim() : log.note 
         });
     });
 
@@ -300,14 +300,34 @@ export default function RosterClient({ initialData, managementData }) {
                       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative z-10">
                         <div className="text-[10px] text-zinc-500 font-mono font-bold whitespace-nowrap w-24">{ev.dateStr}</div>
                         <div className="flex-1 w-full">
-                          {ev.type === 'stats' && (
-                            <div className="text-xs font-mono text-zinc-400 space-y-1">
-                              <div className="text-indigo-400 font-sans font-black uppercase tracking-widest text-[9px] mb-2 border-b border-white/5 pb-1">Stats Snapshot</div>
-                              <div className="flex justify-between"><span className="text-zinc-500">IG Reports:</span><span className="text-white font-bold">{ev.stats.newIG}</span></div>
-                              <div className="flex justify-between"><span className="text-zinc-500">Forum Reports:</span><span className="text-white font-bold">{ev.stats.newForum}</span></div>
-                              <div className="flex justify-between"><span className="text-zinc-500">Discord Tickets:</span><span className="text-white font-bold">{ev.stats.newDiscord}</span></div>
-                            </div>
-                          )}
+                          {ev.type === 'stats' && (() => {
+                            const isSenior = selectedStaffStats.rank === 'Senior Support';
+                            const igTarget = Math.max(0, 30 - (ev.stats.loaDays || 0));
+                            const forumTarget = isSenior ? 5 : 0;
+                            
+                            const metIG = ev.stats.newIG >= igTarget;
+                            const graceIG = ev.stats.newIG >= 25;
+                            const metForum = isSenior ? ev.stats.newForum >= forumTarget : true;
+                            
+                            const status = (metIG && metForum) ? 'MET' : (graceIG && metForum) ? 'GRACE' : 'MISSED';
+                            
+                            const badgeClass = status === 'MET' ? 'bg-emerald-500/20 text-emerald-400' : status === 'GRACE' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400';
+                            const igClass = ev.stats.newIG >= igTarget ? 'text-emerald-400 font-bold' : ev.stats.newIG >= 25 ? 'text-yellow-400 font-bold' : 'text-red-400 font-bold';
+
+                            return (
+                              <div className="text-xs font-mono text-zinc-400 space-y-1">
+                                <div className="flex justify-between items-center mb-2 border-b border-white/5 pb-1">
+                                  <span className="text-indigo-400 font-sans font-black uppercase tracking-widest text-[9px]">Stats Snapshot</span>
+                                  <span className={`text-[8px] font-black uppercase tracking-tighter px-1.5 py-0.5 rounded ${badgeClass}`}>{status}</span>
+                                </div>
+                                <div className="flex justify-between"><span className="text-zinc-500">IG Reports:</span><span className={igClass}>{ev.stats.newIG} <span className="text-zinc-600 font-normal">/ {igTarget}</span></span></div>
+                                {isSenior && (
+                                  <div className="flex justify-between"><span className="text-zinc-500">Forum Reports:</span><span className={ev.stats.newForum >= forumTarget ? 'text-amber-400 font-bold' : 'text-red-400 font-bold'}>{ev.stats.newForum} <span className="text-zinc-600 font-normal">/ {forumTarget}</span></span></div>
+                                )}
+                                <div className="flex justify-between"><span className="text-zinc-500">Discord Tickets:</span><span className="text-white font-bold">{ev.stats.newDiscord}</span></div>
+                              </div>
+                            );
+                          })()}
                           {ev.type === 'strike' && (<div className="text-xs font-black text-red-400 uppercase tracking-widest">{ev.action}</div>)}
                           {ev.type === 'event' && (<div className={`text-xs font-black uppercase tracking-widest ${ev.action.includes('REMOVED') ? 'text-red-400' : ev.action.includes('Promote') || ev.action.includes('Reinstate') ? 'text-emerald-400' : 'text-zinc-200'}`}>{ev.action}</div>)}
                           {ev.type === 'spoken_to' && (
@@ -510,7 +530,7 @@ export default function RosterClient({ initialData, managementData }) {
                       <div className="absolute -right-10 -bottom-10 w-32 h-32 bg-fuchsia-500/10 rounded-full blur-3xl pointer-events-none transition-all group-hover:bg-fuchsia-500/20" />
                       <div className="text-[10px] text-fuchsia-400 font-mono mb-3 font-bold relative z-10">{log.timestamp}</div>
                       <div className="text-[10px] uppercase font-black text-fuchsia-300 mb-1">{isException ? 'METRIC EXCEPTION' : 'Spoken To'}</div>
-                      <p className="text-sm text-zinc-200 whitespace-pre-wrap leading-relaxed relative z-10">{isException ? log.note.replace('METRIC EXCEPTION:', '').trim() : log.note}</p>
+                      <p className="text-sm text-zinc-200 whitespace-pre-wrap leading-relaxed relative z-10">{isException ? log.note.replace(/METRIC EXCEPTION \(.*?\): |METRIC EXCEPTION: /, '').trim() : log.note}</p>
                     </div>
                   );
                 })}
