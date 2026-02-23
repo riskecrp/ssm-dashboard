@@ -2,7 +2,6 @@
 import { useState, useMemo } from 'react';
 import { manageTask, logSpokenTo } from '../actions';
 
-// Extracted Time Filter UI Component
 function TimeFilter({ mode, setMode, month, setMonth, range, setRange, availableMonths, dropKey, openDropdown, setOpenDropdown }) {
   return (
     <div className="flex items-center gap-2 bg-black/40 p-1.5 rounded-xl border border-white/5">
@@ -42,7 +41,6 @@ function TimeFilter({ mode, setMode, month, setMonth, range, setRange, available
 export default function StatisticsClient({ initialData }) {
   const [openDropdown, setOpenDropdown] = useState(null);
   
-  // Independent Time Filters
   const [lbTimeMode, setLbTimeMode] = useState('Monthly'); 
   const [lbMonth, setLbMonth] = useState('');
   const [lbRange, setLbRange] = useState({ start: '', end: '' });
@@ -84,30 +82,34 @@ export default function StatisticsClient({ initialData }) {
 
   const mostRecentMonth = availableMonths[0];
 
-  // METRIC EVALUATOR
   const missedQuotaEvaluations = useMemo(() => {
     if (!mostRecentMonth) return [];
-    const monthStr = mostRecentMonth.substring(3); // extracts 'Feb/2026' from '01/Feb/2026'
+    const monthStr = mostRecentMonth.substring(3); 
     
     return activeStaff.map(s => {
        if (dismissedEvaluations.includes(s.name)) return null;
 
        const h = s.history.find(x => x.month === mostRecentMonth);
        if (!h) return null;
+       
        const igTarget = Math.max(0, 30 - (h.loaDays || 0));
        const isSenior = s.rank === 'Senior Support';
        const forumTarget = isSenior ? 5 : 0;
 
-       let met = h.newIG >= igTarget;
-       if (isSenior && h.newForum < forumTarget) met = false;
+       const metIG = h.newIG >= igTarget;
+       const graceIG = h.newIG >= 25;
+       const metForum = isSenior ? h.newForum >= forumTarget : true;
        
-       if (h.strike > 0) return null; 
+       const status = (metIG && metForum) ? 'MET' : (graceIG && metForum) ? 'GRACE' : 'MISSED';
+       
+       if (status !== 'MISSED') return null; // Only show those who entirely failed
+       if (h.strike > 0) return null; // Already struck globally
        
        const hasException = s.spokenToLogs?.some(log => log.note.includes(`METRIC EXCEPTION (${monthStr})`));
-       if (hasException) return null;
+       if (hasException) return null; // Already excused globally
 
-       return { ...s, monthData: h, metQuota: met, igTarget, forumTarget };
-    }).filter(s => s && !s.metQuota);
+       return { ...s, monthData: h, igTarget, forumTarget, isSenior };
+    }).filter(Boolean);
   }, [activeStaff, mostRecentMonth, dismissedEvaluations]);
 
   const handleConfirmStrike = async (staffName) => {
@@ -126,7 +128,6 @@ export default function StatisticsClient({ initialData }) {
     setExceptionModal({ isOpen: false, name: "", reason: "" });
   };
 
-  // RANK RELIABILITY
   const rankStats = useMemo(() => {
     const stats = {
       support: { met: 0, total: 0, igSum: 0, forumSum: 0 },
@@ -148,8 +149,12 @@ export default function StatisticsClient({ initialData }) {
 
       validHistory.forEach(h => {
         const igTarget = Math.max(0, 30 - (h.loaDays || 0));
-        let met = h.newIG >= igTarget;
-        if (isSenior && h.newForum < 5) met = false;
+        const metForum = isSenior ? h.newForum >= 5 : true;
+        const metIG = h.newIG >= igTarget;
+        const graceIG = h.newIG >= 25;
+        
+        // Count as reliable if they Met or hit the Grace threshold
+        const met = (metIG && metForum) || (graceIG && metForum);
 
         category.total++;
         if (met) category.met++;
@@ -173,7 +178,6 @@ export default function StatisticsClient({ initialData }) {
     }, { ig: 0, forum: 0, discord: 0 });
   }, [initialData]);
 
-  // LEADERBOARD LOGIC
   const staffPerformance = useMemo(() => {
     return activeStaff.map(s => {
       let ig = 0, forum = 0, discord = 0;
@@ -198,49 +202,55 @@ export default function StatisticsClient({ initialData }) {
   const topForum = [...staffPerformance].sort((a, b) => b.forum - a.forum).slice(0, 5).filter(s => s.forum > 0);
   const topDiscord = [...staffPerformance].sort((a, b) => b.discord - a.discord).slice(0, 5).filter(s => s.discord > 0);
 
-  // INDIVIDUAL ANALYSIS DATA
   const selectedStaffData = useMemo(() => {
     const data = initialData.find(s => s.name === selectedStaffName);
     if (!data) return null;
     const isSenior = data.rank === 'Senior Support';
+    
     const historyWithQuota = data.history.slice(0, 6).map(h => {
       const igTarget = Math.max(0, 30 - (h.loaDays || 0));
       const forumTarget = isSenior ? 5 : 0;
-      let met = h.newIG >= igTarget;
-      if (isSenior && h.newForum < forumTarget) met = false;
-      return { ...h, metQuota: met, igTarget, forumTarget, isSenior };
+      
+      const metIG = h.newIG >= igTarget;
+      const graceIG = h.newIG >= 25;
+      const metForum = isSenior ? h.newForum >= forumTarget : true;
+      
+      const status = (metIG && metForum) ? 'MET' : (graceIG && metForum) ? 'GRACE' : 'MISSED';
+      
+      return { ...h, status, igTarget, forumTarget, isSenior };
     });
-    const metCount = historyWithQuota.filter(h => h.metQuota).length;
+    
+    const metCount = historyWithQuota.filter(h => h.status !== 'MISSED').length;
     const reliability = historyWithQuota.length > 0 ? Math.round((metCount / historyWithQuota.length) * 100) : 0;
     const strikes = data.history.filter(h => h.strike > 0);
     return { ...data, historyWithQuota, reliability, metCount, strikes };
   }, [initialData, selectedStaffName]);
 
-  // CUSTOM COMPARE LOGIC
   const comparePerformance = useMemo(() => {
     return initialData.map(s => {
       let ig = 0, forum = 0, discord = 0, metCount = 0, totalEligible = 0;
       const isSenior = s.rank === 'Senior Support';
-      const forumTarget = isSenior ? 5 : 0;
       
+      const calculateStatus = (h) => {
+         const igTarget = Math.max(0, 30 - (h.loaDays || 0));
+         const metForum = isSenior ? h.newForum >= 5 : true;
+         const metIG = h.newIG >= igTarget;
+         const graceIG = h.newIG >= 25;
+         return (metIG && metForum) || (graceIG && metForum); // True if Reliable
+      };
+
       if (compTimeMode === 'Overall') {
         ig = s.lifetimeIG; forum = s.lifetimeForum; discord = s.lifetimeDiscord;
         s.history.forEach(h => {
            totalEligible++;
-           const igTarget = Math.max(0, 30 - (h.loaDays || 0));
-           let met = h.newIG >= igTarget;
-           if (isSenior && h.newForum < forumTarget) met = false;
-           if (met) metCount++;
+           if (calculateStatus(h)) metCount++;
         });
       } else if (compTimeMode === 'Monthly') {
         const h = s.history.find(x => x.month === compMonth);
         if (h) { 
            ig = h.newIG; forum = h.newForum; discord = h.newDiscord; 
            totalEligible = 1;
-           const igTarget = Math.max(0, 30 - (h.loaDays || 0));
-           let met = h.newIG >= igTarget;
-           if (isSenior && h.newForum < forumTarget) met = false;
-           if (met) metCount = 1;
+           if (calculateStatus(h)) metCount = 1;
         }
       } else if (compTimeMode === 'Range') {
         const startMs = new Date(compRange.start).getTime() || 0;
@@ -249,10 +259,7 @@ export default function StatisticsClient({ initialData }) {
         validHistory.forEach(h => {
            ig += h.newIG; forum += h.newForum; discord += h.newDiscord;
            totalEligible++;
-           const igTarget = Math.max(0, 30 - (h.loaDays || 0));
-           let met = h.newIG >= igTarget;
-           if (isSenior && h.newForum < forumTarget) met = false;
-           if (met) metCount++;
+           if (calculateStatus(h)) metCount++;
         });
       }
       const reliability = totalEligible > 0 ? Math.round((metCount / totalEligible) * 100) : 0;
@@ -281,10 +288,8 @@ export default function StatisticsClient({ initialData }) {
         </div>
       </header>
 
-      {/* SECTION 1: METRIC EVALUATOR & LEADERBOARDS */}
       <div className="flex flex-col space-y-8 relative z-50">
         
-        {/* CONDENSED METRIC EVALUATOR */}
         {mostRecentMonth && missedQuotaEvaluations.length > 0 && (
           <section className="bg-red-950/20 backdrop-blur-3xl border border-red-500/30 rounded-[2rem] p-6 shadow-[0_20px_50px_rgba(239,68,68,0.1)]">
             <div className="flex items-center gap-3 mb-4 border-b border-red-500/20 pb-3">
@@ -296,12 +301,12 @@ export default function StatisticsClient({ initialData }) {
                 <div key={s.name} className="bg-black/50 border border-red-500/20 rounded-xl p-4 flex flex-col gap-3 group hover:border-red-500/50 transition-colors">
                   <div className="flex justify-between items-center">
                     <span className="font-bold text-white text-sm">{s.name}</span>
-                    <span className="text-[8px] uppercase tracking-widest text-red-300 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20">{s.rank === 'Senior Support' ? 'Senior' : 'Support'}</span>
+                    <span className="text-[8px] uppercase tracking-widest text-red-300 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20">{s.isSenior ? 'Senior' : 'Support'}</span>
                   </div>
                   <div className="flex justify-between text-[10px] font-mono text-zinc-400 bg-white/5 p-2 rounded-lg">
-                    <span>IG: <span className="text-red-400 font-bold">{s.monthData.newIG}</span>/{s.igTarget}</span>
-                    {s.rank === 'Senior Support' && (
-                      <span>FR: <span className={s.monthData.newForum < s.forumTarget ? 'text-red-400 font-bold' : 'text-amber-400 font-bold'}>{s.monthData.newForum}</span>/{s.forumTarget}</span>
+                    <span>IG: <span className="text-red-400 font-bold">{s.monthData.newIG}</span> / {s.igTarget}</span>
+                    {s.isSenior && (
+                      <span>FR: <span className={s.monthData.newForum < s.forumTarget ? 'text-red-400 font-bold' : 'text-amber-400 font-bold'}>{s.monthData.newForum}</span> / {s.forumTarget}</span>
                     )}
                   </div>
                   <div className="flex gap-2 mt-1">
@@ -314,7 +319,6 @@ export default function StatisticsClient({ initialData }) {
           </section>
         )}
 
-        {/* COMBINED LEADERBOARD */}
         <section className="bg-zinc-900/60 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 shadow-xl">
            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-6 border-b border-white/5 pb-4">
              <h2 className="text-2xl font-light text-white tracking-tight">Network Leaderboards</h2>
@@ -328,10 +332,7 @@ export default function StatisticsClient({ initialData }) {
         </section>
       </div>
 
-      {/* SECTION 2: SIDE-BY-SIDE RANK & INDIVIDUAL */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 relative z-40">
-        
-        {/* RANK RELIABILITY (1 Col) */}
         <section className="xl:col-span-1 bg-zinc-900/60 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 shadow-xl flex flex-col gap-6">
            <div className="flex flex-col xl:flex-row justify-between items-start xl:items-end gap-4 border-b border-white/5 pb-4 mb-2">
               <div>
@@ -340,11 +341,10 @@ export default function StatisticsClient({ initialData }) {
               </div>
               <TimeFilter mode={rankTimeMode} setMode={setRankTimeMode} month={rankMonth} setMonth={setRankMonth} range={rankRange} setRange={setRankRange} availableMonths={availableMonths} dropKey="rank" openDropdown={openDropdown} setOpenDropdown={setOpenDropdown} />
            </div>
-           <RankCard title="Support Personnel" stats={rankStats.support} color="text-emerald-400" glow="bg-emerald-500/5" logic="30 In-Game Reports" />
-           <RankCard title="Senior Support" stats={rankStats.senior} color="text-indigo-400" glow="bg-indigo-500/5" logic="30 IG & 5 Forum" />
+           <RankCard title="Support Personnel" stats={rankStats.support} color="text-emerald-400" glow="bg-emerald-500/5" logic="30 In-Game Reports (-LOA)" />
+           <RankCard title="Senior Support" stats={rankStats.senior} color="text-indigo-400" glow="bg-indigo-500/5" logic="30 IG & 5 Forum (-LOA)" />
         </section>
 
-        {/* INDIVIDUAL ANALYSIS (2 Cols) */}
         <section className="xl:col-span-2 bg-zinc-900/60 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 shadow-xl flex flex-col">
           <div className="relative z-50 border-b border-white/5 pb-6 mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div>
@@ -396,7 +396,6 @@ export default function StatisticsClient({ initialData }) {
         </section>
       </div>
 
-      {/* SECTION 3: CUSTOM COMPARISON */}
       <section className="relative z-30 bg-zinc-900/60 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-10 shadow-xl">
          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6 mb-8 border-b border-white/5 pb-6">
             <div>
@@ -478,7 +477,6 @@ export default function StatisticsClient({ initialData }) {
   );
 }
 
-// SUB-COMPONENTS
 function LeaderboardColumn({ title, data, color, field }) {
   return (
     <div className="group">
@@ -524,19 +522,25 @@ function HistoryLedger({ title, data }) {
     <div className="bg-black/40 border border-white/5 rounded-2xl p-6 flex flex-col h-[400px] shadow-inner">
       <h3 className="text-[10px] text-zinc-500 uppercase tracking-[0.2em] font-black mb-4 border-b border-white/5 pb-3">{title}</h3>
       <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
-        {data.map((h, i) => (
-          <div key={i} className={`bg-white/[0.02] border ${h.metQuota ? 'border-emerald-500/20' : 'border-red-500/20'} p-4 rounded-xl relative overflow-hidden`}>
-            <div className={`absolute top-0 right-0 px-2 py-1 text-[7px] font-black uppercase tracking-tighter rounded-bl-lg ${h.metQuota ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>{h.metQuota ? 'MET' : 'MISSED'}</div>
-            <div className="text-[10px] text-zinc-400 font-bold font-mono uppercase tracking-widest mb-3">{h.month.substring(3)}</div>
-            <div className="space-y-2 font-mono text-[10px]">
-              <div className="flex justify-between border-b border-white/5 pb-1"><span className="text-zinc-500">In-Game Reports</span><span className={h.newIG >= h.igTarget ? 'text-emerald-400' : 'text-red-400'}>{h.newIG} <span className="text-zinc-700">/ {h.igTarget}</span></span></div>
-              {h.isSenior && (
-                <div className="flex justify-between border-b border-white/5 pb-1"><span className="text-zinc-500">Forum Reports</span><span className={h.newForum >= h.forumTarget ? 'text-amber-400' : 'text-red-400'}>{h.newForum} <span className="text-zinc-700">/ {h.forumTarget}</span></span></div>
-              )}
-              <div className="flex justify-between"><span className="text-zinc-500">Discord Tickets</span><span className="text-indigo-400">{h.newDiscord}</span></div>
+        {data.map((h, i) => {
+          const badgeClass = h.status === 'MET' ? 'bg-emerald-500/20 text-emerald-400' : h.status === 'GRACE' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400';
+          const borderClass = h.status === 'MET' ? 'border-emerald-500/20' : h.status === 'GRACE' ? 'border-yellow-500/20' : 'border-red-500/20';
+          const igClass = h.newIG >= h.igTarget ? 'text-emerald-400' : h.newIG >= 25 ? 'text-yellow-400' : 'text-red-400';
+          
+          return (
+            <div key={i} className={`bg-white/[0.02] border ${borderClass} p-4 rounded-xl relative overflow-hidden`}>
+              <div className={`absolute top-0 right-0 px-2 py-1 text-[7px] font-black uppercase tracking-tighter rounded-bl-lg ${badgeClass}`}>{h.status}</div>
+              <div className="text-[10px] text-zinc-400 font-bold font-mono uppercase tracking-widest mb-3">{h.month.substring(3)}</div>
+              <div className="space-y-2 font-mono text-[10px]">
+                <div className="flex justify-between border-b border-white/5 pb-1"><span className="text-zinc-500">In-Game Reports</span><span className={igClass}>{h.newIG} <span className="text-zinc-700">/ {h.igTarget}</span></span></div>
+                {h.isSenior && (
+                  <div className="flex justify-between border-b border-white/5 pb-1"><span className="text-zinc-500">Forum Reports</span><span className={h.newForum >= h.forumTarget ? 'text-amber-400' : 'text-red-400'}>{h.newForum} <span className="text-zinc-700">/ {h.forumTarget}</span></span></div>
+                )}
+                <div className="flex justify-between"><span className="text-zinc-500">Discord Tickets</span><span className="text-indigo-400">{h.newDiscord}</span></div>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
