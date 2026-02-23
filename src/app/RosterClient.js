@@ -236,7 +236,7 @@ export default function RosterClient({ initialData, managementData }) {
                     </div>
                     <div className="mt-auto grid grid-cols-1 xl:grid-cols-2 gap-6 border-t border-white/10 pt-6">
                       <div>
-                        <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">Lifetime Volume</h3>
+                        <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">Overall Stats</h3>
                         <div className="grid grid-cols-3 gap-2 text-center">
                           <div className="bg-black/30 rounded-xl p-3 border border-white/5 shadow-inner"><div className="text-xl font-light text-white">{staff.lifetimeIG}</div><div className="text-[8px] text-zinc-500 uppercase tracking-widest mt-1">IG</div></div>
                           <div className="bg-black/30 rounded-xl p-3 border border-white/5 shadow-inner"><div className="text-xl font-light text-white">{staff.lifetimeForum}</div><div className="text-[8px] text-zinc-500 uppercase tracking-widest mt-1">Forum</div></div>
@@ -245,7 +245,7 @@ export default function RosterClient({ initialData, managementData }) {
                       </div>
                       <div>
                         <div className="flex justify-between items-end mb-3 border-b border-white/5 pb-2">
-                          <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Lifecycle History</h3>
+                          <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Notes</h3>
                           {staff.spokenToLogs && staff.spokenToLogs.length > 0 && (
                             <button onClick={(e) => { e.stopPropagation(); setViewLogsModal({ isOpen: true, name: staff.name, logs: staff.spokenToLogs }); }} className="text-[9px] font-bold uppercase tracking-widest text-fuchsia-400 hover:text-fuchsia-300 bg-fuchsia-500/10 px-2.5 py-1.5 rounded-lg border border-fuchsia-500/20 transition-colors">Logs ({staff.spokenToLogs.length})</button>
                           )}
