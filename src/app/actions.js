@@ -105,11 +105,13 @@ export async function manageStaffRecord({ name, action, role, discordId, forumLi
   return { success: true };
 }
 
+// THE RETROACTIVE SYNC ENGINE
 export async function manageLOA({ name, startDate, endDate, action, oldStart, oldEnd }) {
   const doc = await getDocument();
   const loaTab = doc.sheetsByTitle['LOAs'];
   if (!loaTab) return { success: false, error: "LOAs tab not found" };
   
+  // 1. Write to LOA Master Tab
   if (action === 'Delete') {
     const rows = await loaTab.getRows();
     const row = rows.find(r => r.get('Name') === name && r.get('Start Date') === oldStart && r.get('End Date') === oldEnd);
@@ -126,6 +128,43 @@ export async function manageLOA({ name, startDate, endDate, action, oldStart, ol
     await loaTab.addRow({ 'Name': name, 'Start Date': startDate, 'End Date': endDate });
   }
   
+  // 2. Retroactively Overwrite AllStats LOA Column
+  const allStatsTab = doc.sheetsByTitle['AllStats'] || doc.sheetsByTitle['Sheet1'];
+  if (allStatsTab) {
+    const allLoaRows = await loaTab.getRows();
+    const userLoas = allLoaRows
+       .filter(r => r.get('Name')?.toLowerCase().trim() === name.toLowerCase().trim())
+       .map(r => ({ start: new Date(r.get('Start Date')), end: new Date(r.get('End Date')) }));
+
+    const statRows = await allStatsTab.getRows();
+    const userStatRows = statRows.filter(r => r.get('Staff Name')?.toLowerCase().trim() === name.toLowerCase().trim());
+
+    for (const statRow of userStatRows) {
+       const statDateStr = statRow.get('Date');
+       if (!statDateStr) continue;
+
+       const tDate = new Date(statDateStr.replace(/\//g, ' '));
+       if (isNaN(tDate.getTime())) continue;
+
+       const mYear = tDate.getFullYear();
+       const mMonth = tDate.getMonth();
+       const monthStart = new Date(mYear, mMonth, 1);
+       const monthEnd = new Date(mYear, mMonth + 1, 0);
+
+       let totalDays = 0;
+       userLoas.forEach(loa => {
+          const overlapStart = loa.start > monthStart ? loa.start : monthStart;
+          const overlapEnd = loa.end < monthEnd ? loa.end : monthEnd;
+          if (overlapStart <= overlapEnd) {
+             totalDays += Math.ceil((overlapEnd - overlapStart) / (1000 * 60 * 60 * 24)) + 1;
+          }
+       });
+
+       statRow.set('LOA Days', totalDays);
+       await statRow.save();
+    }
+  }
+
   revalidatePath('/');
   return { success: true };
 }
@@ -158,11 +197,53 @@ export async function logSpokenTo({ name, note }) {
   return { success: true };
 }
 
-export async function commitMonthlyBatch(stagedRows) {
+// THE FORWARD SYNC ENGINE
+export async function commitMonthlyBatch(stagedRows, newLoas = []) {
   const doc = await getDocument();
+  const loaTab = doc.sheetsByTitle['LOAs'];
+  
+  // 1. Write any newly typed LOAs to the Master Tab first
+  if (loaTab && newLoas.length > 0) {
+     await loaTab.addRows(newLoas);
+  }
+
+  // 2. Read the master tab and force the overlap math onto the snapshot before committing
+  if (loaTab) {
+     const allLoaRows = await loaTab.getRows();
+     
+     stagedRows.forEach(row => {
+        const name = row['Staff Name'];
+        const statDateStr = row['Date'];
+        const tDate = new Date(statDateStr.replace(/\//g, ' '));
+        
+        if (!isNaN(tDate.getTime())) {
+           const mYear = tDate.getFullYear();
+           const mMonth = tDate.getMonth();
+           const monthStart = new Date(mYear, mMonth, 1);
+           const monthEnd = new Date(mYear, mMonth + 1, 0);
+
+           const userLoas = allLoaRows
+              .filter(r => r.get('Name')?.toLowerCase().trim() === name.toLowerCase().trim())
+              .map(r => ({ start: new Date(r.get('Start Date')), end: new Date(r.get('End Date')) }));
+
+           let totalDays = 0;
+           userLoas.forEach(loa => {
+              const overlapStart = loa.start > monthStart ? loa.start : monthStart;
+              const overlapEnd = loa.end < monthEnd ? loa.end : monthEnd;
+              if (overlapStart <= overlapEnd) {
+                 totalDays += Math.ceil((overlapEnd - overlapStart) / (1000 * 60 * 60 * 24)) + 1;
+              }
+           });
+           
+           row['LOA Days'] = totalDays; // Overwrite user input with factual DB math
+        }
+     });
+  }
+
+  // 3. Commit the perfectly synced snapshot
   const allStatsTab = doc.sheetsByTitle['AllStats'] || doc.sheetsByTitle['Sheet1'];
-  if (!allStatsTab) return { success: false, error: "Stats database tab not found" };
-  await allStatsTab.addRows(stagedRows);
+  if (allStatsTab) await allStatsTab.addRows(stagedRows);
+
   revalidatePath('/');
   return { success: true };
 }
