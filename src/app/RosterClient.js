@@ -2,7 +2,6 @@
 import { useState, useMemo } from 'react';
 import { manageStaffRecord, manageLOA, logSpokenTo } from './actions';
 
-// Bulletproof Date Parser for Manually Inputted Dates
 const parseSafeDate = (dateStr) => {
   if (!dateStr || dateStr === 'N/A') return 0;
   let d = new Date(dateStr.replace(/\//g, ' '));
@@ -12,7 +11,7 @@ const parseSafeDate = (dateStr) => {
       d = new Date(`${parts[1]}/${parts[0]}/${parts[2]}`);
       if (!isNaN(d.getTime())) return d.getTime();
   }
-  return 0; // Fallback so sort never throws NaN
+  return 0; 
 };
 
 export default function RosterClient({ initialData, managementData }) {
@@ -48,12 +47,12 @@ export default function RosterClient({ initialData, managementData }) {
     if (!selectedStaffStats || selectedStaffStats.isManagement) return [];
     let events = [];
 
-    selectedStaffStats.history.forEach(h => {
+    (selectedStaffStats.history || []).forEach(h => {
         events.push({ id: `stat-${h.month}`, type: 'stats', dateStr: h.month, dateObj: parseSafeDate(h.month), stats: h });
         if (h.strike > 0) events.push({ id: `strike-${h.month}`, type: 'strike', dateStr: h.month, dateObj: parseSafeDate(h.month) + 1, action: `Strike Issued` });
     });
 
-    selectedStaffStats.spokenToLogs?.forEach((log, i) => {
+    (selectedStaffStats.spokenToLogs || []).forEach((log, i) => {
         let isException = log.note.startsWith('METRIC EXCEPTION');
         events.push({ 
             id: `log-${i}-${log.timestamp}`, 
@@ -61,11 +60,11 @@ export default function RosterClient({ initialData, managementData }) {
             dateStr: log.timestamp, 
             dateObj: parseSafeDate(log.timestamp), 
             action: isException ? 'METRIC EXCEPTION' : 'Spoken To', 
-            note: isException ? log.note.replace('METRIC EXCEPTION: ', '').trim() : log.note 
+            note: isException ? log.note.replace('METRIC EXCEPTION:', '').trim() : log.note 
         });
     });
 
-    selectedStaffStats.lifecycle.forEach((l, i) => {
+    (selectedStaffStats.lifecycle || []).forEach((l, i) => {
         if (l.action.includes('Spoken To Log') || l.action.includes('METRIC EXCEPTION')) return; 
         events.push({ id: `lc-${i}-${l.date}`, type: 'event', dateStr: l.date, dateObj: parseSafeDate(l.date), action: l.action });
     });
@@ -180,9 +179,9 @@ export default function RosterClient({ initialData, managementData }) {
         {displayedRoster.map((staff) => {
           const isSenior = staff.rank === 'Senior Support';
           
-          const cardLifecycle = [
-            ...staff.lifecycle.filter(l => !l.action.includes('Spoken To Log') && !l.action.includes('METRIC EXCEPTION')), 
-            ...staff.spokenToLogs.map(log => ({ date: log.timestamp, action: log.note.startsWith('METRIC EXCEPTION') ? 'METRIC EXCEPTION' : 'Spoken To Log' }))
+          const cardLifecycle = staff.isManagement ? [] : [
+            ...(staff.lifecycle || []).filter(l => !l.action.includes('Spoken To Log') && !l.action.includes('METRIC EXCEPTION')), 
+            ...(staff.spokenToLogs || []).map(log => ({ date: log.timestamp, action: log.note.startsWith('METRIC EXCEPTION') ? 'METRIC EXCEPTION' : 'Spoken To Log' }))
           ].sort((a, b) => parseSafeDate(b.date) - parseSafeDate(a.date));
 
           return (
@@ -250,7 +249,7 @@ export default function RosterClient({ initialData, managementData }) {
                     </div>
                     <div className="mt-auto grid grid-cols-1 xl:grid-cols-2 gap-6 border-t border-white/10 pt-6">
                       <div>
-                        <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">Overall Stats</h3>
+                        <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">Lifetime Volume</h3>
                         <div className="grid grid-cols-3 gap-2 text-center">
                           <div className="bg-black/30 rounded-xl p-3 border border-white/5 shadow-inner"><div className="text-xl font-light text-white">{staff.lifetimeIG}</div><div className="text-[8px] text-zinc-500 uppercase tracking-widest mt-1">IG</div></div>
                           <div className="bg-black/30 rounded-xl p-3 border border-white/5 shadow-inner"><div className="text-xl font-light text-white">{staff.lifetimeForum}</div><div className="text-[8px] text-zinc-500 uppercase tracking-widest mt-1">Forum</div></div>
@@ -259,7 +258,7 @@ export default function RosterClient({ initialData, managementData }) {
                       </div>
                       <div>
                         <div className="flex justify-between items-end mb-3 border-b border-white/5 pb-2">
-                          <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Notes</h3>
+                          <h3 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Lifecycle History</h3>
                           {staff.spokenToLogs && staff.spokenToLogs.length > 0 && (
                             <button onClick={(e) => { e.stopPropagation(); setViewLogsModal({ isOpen: true, name: staff.name, logs: staff.spokenToLogs }); }} className="text-[9px] font-bold uppercase tracking-widest text-fuchsia-400 hover:text-fuchsia-300 bg-fuchsia-500/10 px-2.5 py-1.5 rounded-lg border border-fuchsia-500/20 transition-colors">Logs ({staff.spokenToLogs.length})</button>
                           )}
@@ -511,7 +510,7 @@ export default function RosterClient({ initialData, managementData }) {
                       <div className="absolute -right-10 -bottom-10 w-32 h-32 bg-fuchsia-500/10 rounded-full blur-3xl pointer-events-none transition-all group-hover:bg-fuchsia-500/20" />
                       <div className="text-[10px] text-fuchsia-400 font-mono mb-3 font-bold relative z-10">{log.timestamp}</div>
                       <div className="text-[10px] uppercase font-black text-fuchsia-300 mb-1">{isException ? 'METRIC EXCEPTION' : 'Spoken To'}</div>
-                      <p className="text-sm text-zinc-200 whitespace-pre-wrap leading-relaxed relative z-10">{isException ? log.note.replace('METRIC EXCEPTION: ', '').trim() : log.note}</p>
+                      <p className="text-sm text-zinc-200 whitespace-pre-wrap leading-relaxed relative z-10">{isException ? log.note.replace('METRIC EXCEPTION:', '').trim() : log.note}</p>
                     </div>
                   );
                 })}
