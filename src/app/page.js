@@ -116,23 +116,23 @@ export default async function Home() {
     const uniqueDiscordIds = [...new Set(discordIds)];
     const discordNames = {};
 
+    // SEQUENTIAL FETCH FIX: Stops Discord from throwing 429 Rate Limit errors when searching IDs
     if (process.env.DISCORD_BOT_TOKEN && uniqueDiscordIds.length > 0) {
-      await Promise.all(uniqueDiscordIds.map(async (id) => {
+      for (const id of uniqueDiscordIds) {
         try {
           const res = await fetch(`https://discord.com/api/v10/users/${id}`, {
-            headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}` },
-            next: { revalidate: 3600 } 
+            headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}` }
           });
           if (res.ok) {
             const data = await res.json();
             discordNames[id] = data.global_name || data.username;
           } else {
-            discordNames[id] = "Invalid ID";
+            discordNames[id] = "Not Found";
           }
         } catch (err) {
           discordNames[id] = "Error";
         }
-      }));
+      }
     }
 
     staffMap.forEach(staff => { staff.discordName = staff.discordId ? (discordNames[staff.discordId] || "Not Found") : "N/A"; });
@@ -165,7 +165,6 @@ export default async function Home() {
       const rawDateStr = row.get('Date') || '';
       const dateStr = normalizeMonthString(rawDateStr);
       
-      // Universally read manually inputted strikes (TRUE, Yes, 1, etc)
       const rawStrike = String(row.get('Strike Given') || '').toUpperCase().trim();
       const strikeCount = (rawStrike === 'TRUE' || rawStrike === 'YES' || rawStrike === '1') ? 1 : (parseInt(rawStrike, 10) || 0);
 
@@ -231,7 +230,6 @@ export default async function Home() {
     console.error("Fetch Error:", e);
   }
 
-  // FORCE SORT: Senior Support A-Z -> Support A-Z
   const rosterData = Array.from(staffMap.values()).sort((a, b) => {
     if (a.rank !== b.rank) {
       return a.rank === 'Senior Support' ? -1 : 1;
