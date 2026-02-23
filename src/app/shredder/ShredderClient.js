@@ -98,10 +98,19 @@ export default function ShredderClient({ baselineData, savedPrepText }) {
     const monthName = months[parseInt(monthNum, 10) - 1];
     const fullDateStr = `01/${monthName}/${year}`;
 
-    const finalRows = stagedData.map(d => {
+    const finalRows = [];
+    const newLoas = [];
+
+    stagedData.forEach(d => {
       const currentDiscord = discordInputs[d.name] || d.prevDiscord;
       const staffLoa = loaDates[d.name] || { start: '', end: '' };
-      return {
+      
+      // If the user inputted new dates during staging, queue them for the master LOA tab
+      if (staffLoa.start && staffLoa.end) {
+         newLoas.push({ 'Name': d.name, 'Start Date': staffLoa.start, 'End Date': staffLoa.end });
+      }
+
+      finalRows.push({
         'Date': fullDateStr,
         'Staff Name': d.name,
         'Senior': d.isSenior ? 'TRUE' : 'FALSE',
@@ -114,11 +123,12 @@ export default function ShredderClient({ baselineData, savedPrepText }) {
         'New Forum Reports': Math.max(0, d.currentForum - d.prevForum),
         'New Discord': Math.max(0, currentDiscord - d.prevDiscord),
         'Strike Given': 0,
-        'LOA Days': calculateDays(staffLoa.start, staffLoa.end)
-      };
+        'LOA Days': 0 // Sent as 0 because the server will forcefully calculate it from the master LOA tab
+      });
     });
 
-    await commitMonthlyBatch(finalRows);
+    await commitMonthlyBatch(finalRows, newLoas);
+    
     setProcessing(false);
     setStep(1);
     setPrepText("");
@@ -179,7 +189,6 @@ export default function ShredderClient({ baselineData, savedPrepText }) {
                     <MathBlock title="Discord" prev={staff.prevDiscord} current={currentDiscordVal} newAmount={Math.max(0, currentDiscordVal - staff.prevDiscord)} />
                   </div>
 
-                  {/* FIXED FULL WIDTH INPUT PANEL */}
                   <div className="mt-auto grid grid-cols-1 md:grid-cols-2 gap-4 bg-black/30 p-5 rounded-2xl border border-white/5 shadow-inner">
                      <div className="flex flex-col gap-2">
                         <div className="text-[9px] text-amber-500 uppercase tracking-widest font-black">LOA Dates ({computedDays} Days)</div>
@@ -204,7 +213,7 @@ export default function ShredderClient({ baselineData, savedPrepText }) {
 
           <div className="flex justify-end pt-8">
             <button disabled={processing} onClick={handleCommitBatch} className="w-full sm:w-auto px-12 py-5 bg-emerald-600/80 hover:bg-emerald-500 backdrop-blur-md border border-emerald-400/50 rounded-2xl font-bold text-white uppercase text-sm tracking-widest shadow-[0_0_20px_rgba(16,185,129,0.4)] transition-all">
-              {processing ? 'Writing to Database...' : 'Commit Snapshot to Database'}
+              {processing ? 'Calculating LOAs & Committing...' : 'Commit Snapshot to Database'}
             </button>
           </div>
         </div>
