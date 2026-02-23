@@ -67,7 +67,6 @@ export default async function Home() {
         });
     }
 
-    // Load Management Roster
     mgmtRows.forEach(row => {
        const name = row.get('Name')?.trim();
        if (!name) return;
@@ -81,7 +80,6 @@ export default async function Home() {
        });
     });
 
-    // Load Support Roster
     rosterRows.forEach(row => {
       const name = row.get('Name')?.trim();
       if (!name) return;
@@ -114,7 +112,6 @@ export default async function Home() {
       });
     });
 
-    // Discord Names mapping
     const discordIds = [...staffMap.values(), ...managementMap.values()].map(s => s.discordId).filter(Boolean);
     const uniqueDiscordIds = [...new Set(discordIds)];
     const discordNames = {};
@@ -168,6 +165,10 @@ export default async function Home() {
       const rawDateStr = row.get('Date') || '';
       const dateStr = normalizeMonthString(rawDateStr);
       
+      // Universally read manually inputted strikes (TRUE, Yes, 1, etc)
+      const rawStrike = String(row.get('Strike Given') || '').toUpperCase().trim();
+      const strikeCount = (rawStrike === 'TRUE' || rawStrike === 'YES' || rawStrike === '1') ? 1 : (parseInt(rawStrike, 10) || 0);
+
       staff.history.push({
         month: dateStr,
         timestamp: new Date(dateStr.replace(/\//g, ' ')).getTime() || 0,
@@ -177,7 +178,7 @@ export default async function Home() {
         totalIG: parseStat(row.get('Total Reports Completed')),
         totalForum: parseStat(row.get('Total Forum Reports')),
         totalDiscord: parseStat(row.get('Total Discord')),
-        strike: row.get('Strike Given') === 'TRUE' ? 1 : parseStat(row.get('Strike Given')), // Adapt to boolean or number
+        strike: strikeCount,
         loaDays: parseStat(row.get('LOA Days'))
       });
     });
@@ -230,7 +231,14 @@ export default async function Home() {
     console.error("Fetch Error:", e);
   }
 
-  const rosterData = Array.from(staffMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+  // FORCE SORT: Senior Support A-Z -> Support A-Z
+  const rosterData = Array.from(staffMap.values()).sort((a, b) => {
+    if (a.rank !== b.rank) {
+      return a.rank === 'Senior Support' ? -1 : 1;
+    }
+    return a.name.localeCompare(b.name);
+  });
+  
   const managementData = Array.from(managementMap.values()).sort((a, b) => a.name.localeCompare(b.name));
   
   return <RosterClient initialData={rosterData} managementData={managementData} />;
