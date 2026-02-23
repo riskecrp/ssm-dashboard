@@ -2,6 +2,19 @@
 import { useState, useMemo } from 'react';
 import { manageStaffRecord, manageLOA, logSpokenTo } from './actions';
 
+// Bulletproof Date Parser for Manually Inputted Dates
+const parseSafeDate = (dateStr) => {
+  if (!dateStr || dateStr === 'N/A') return 0;
+  let d = new Date(dateStr.replace(/\//g, ' '));
+  if (!isNaN(d.getTime())) return d.getTime();
+  const parts = String(dateStr).split(/[-/]/);
+  if (parts.length >= 3) {
+      d = new Date(`${parts[1]}/${parts[0]}/${parts[2]}`);
+      if (!isNaN(d.getTime())) return d.getTime();
+  }
+  return 0; // Fallback so sort never throws NaN
+};
+
 export default function RosterClient({ initialData, managementData }) {
   const [viewMode, setViewMode] = useState('Active'); 
   const [roleFilter, setRoleFilter] = useState("All"); 
@@ -36,8 +49,8 @@ export default function RosterClient({ initialData, managementData }) {
     let events = [];
 
     selectedStaffStats.history.forEach(h => {
-        events.push({ id: `stat-${h.month}`, type: 'stats', dateStr: h.month, dateObj: new Date(h.month).getTime() || 0, stats: h });
-        if (h.strike > 0) events.push({ id: `strike-${h.month}`, type: 'strike', dateStr: h.month, dateObj: (new Date(h.month).getTime() || 0) + 1, action: `Strike Issued` });
+        events.push({ id: `stat-${h.month}`, type: 'stats', dateStr: h.month, dateObj: parseSafeDate(h.month), stats: h });
+        if (h.strike > 0) events.push({ id: `strike-${h.month}`, type: 'strike', dateStr: h.month, dateObj: parseSafeDate(h.month) + 1, action: `Strike Issued` });
     });
 
     selectedStaffStats.spokenToLogs?.forEach((log, i) => {
@@ -46,7 +59,7 @@ export default function RosterClient({ initialData, managementData }) {
             id: `log-${i}-${log.timestamp}`, 
             type: 'spoken_to', 
             dateStr: log.timestamp, 
-            dateObj: new Date(log.timestamp.replace(/\//g, ' ')).getTime() || 0, 
+            dateObj: parseSafeDate(log.timestamp), 
             action: isException ? 'METRIC EXCEPTION' : 'Spoken To', 
             note: isException ? log.note.replace('METRIC EXCEPTION: ', '').trim() : log.note 
         });
@@ -54,7 +67,7 @@ export default function RosterClient({ initialData, managementData }) {
 
     selectedStaffStats.lifecycle.forEach((l, i) => {
         if (l.action.includes('Spoken To Log') || l.action.includes('METRIC EXCEPTION')) return; 
-        events.push({ id: `lc-${i}-${l.date}`, type: 'event', dateStr: l.date, dateObj: new Date(l.date.replace(/\//g, ' ')).getTime() || 0, action: l.action });
+        events.push({ id: `lc-${i}-${l.date}`, type: 'event', dateStr: l.date, dateObj: parseSafeDate(l.date), action: l.action });
     });
 
     return events.sort((a, b) => b.dateObj - a.dateObj);
@@ -167,9 +180,10 @@ export default function RosterClient({ initialData, managementData }) {
         {displayedRoster.map((staff) => {
           const isSenior = staff.rank === 'Senior Support';
           
-          // Generate Combined Lifecycle specifically for the small card box
-          const cardLifecycle = [...staff.lifecycle.filter(l => !l.action.includes('Spoken To Log') && !l.action.includes('METRIC EXCEPTION')), ...staff.spokenToLogs.map(log => ({ date: log.timestamp, action: log.note.startsWith('METRIC EXCEPTION') ? 'METRIC EXCEPTION' : 'Spoken To Log' }))]
-            .sort((a, b) => new Date(b.date.replace(/\//g, ' ')) - new Date(a.date.replace(/\//g, ' ')));
+          const cardLifecycle = [
+            ...staff.lifecycle.filter(l => !l.action.includes('Spoken To Log') && !l.action.includes('METRIC EXCEPTION')), 
+            ...staff.spokenToLogs.map(log => ({ date: log.timestamp, action: log.note.startsWith('METRIC EXCEPTION') ? 'METRIC EXCEPTION' : 'Spoken To Log' }))
+          ].sort((a, b) => parseSafeDate(b.date) - parseSafeDate(a.date));
 
           return (
             <div key={staff.name} onClick={() => !staff.isManagement && setSelectedStaffStats(staff)} className={`relative ${!staff.isManagement && 'cursor-pointer hover:-translate-y-2 hover:shadow-[0_20px_80px_rgba(79,70,229,0.3)]'} bg-zinc-900/80 backdrop-blur-2xl border ${staff.isManagement ? 'border-amber-500/20' : viewMode === 'Active' ? 'border-white/10 hover:border-indigo-500/40' : 'border-red-900/30 hover:border-red-500/30'} rounded-[2rem] overflow-hidden shadow-[0_16px_40px_rgba(0,0,0,0.6)] transition-all duration-500 group flex flex-col`}>
