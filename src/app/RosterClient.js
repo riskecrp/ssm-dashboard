@@ -306,7 +306,7 @@ export default function RosterClient({ initialData, managementData }) {
                             const forumTarget = isSenior ? 5 : 0;
                             
                             const metIG = ev.stats.newIG >= igTarget;
-                            const graceIG = ev.stats.newIG >= 25;
+                            const graceIG = ev.stats.newIG >= 25 && !metIG;
                             const metForum = isSenior ? ev.stats.newForum >= forumTarget : true;
                             
                             const status = (metIG && metForum) ? 'MET' : (graceIG && metForum) ? 'GRACE' : 'MISSED';
@@ -328,7 +328,7 @@ export default function RosterClient({ initialData, managementData }) {
                               </div>
                             );
                           })()}
-                          {ev.type === 'strike' && (<div className="text-xs font-black text-red-400 uppercase tracking-widest">{ev.action}</div>)}
+                          {ev.type === 'strike' && (<div className="text-xs font-black text-red-400 uppercase tracking-widest">Strike Issued</div>)}
                           {ev.type === 'event' && (<div className={`text-xs font-black uppercase tracking-widest ${ev.action.includes('REMOVED') ? 'text-red-400' : ev.action.includes('Promote') || ev.action.includes('Reinstate') ? 'text-emerald-400' : 'text-zinc-200'}`}>{ev.action}</div>)}
                           {ev.type === 'spoken_to' && (
                             <div>
