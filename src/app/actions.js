@@ -368,8 +368,35 @@ export async function pingDiscordTask({ tasksArray, targetPings }) {
   
   let formattedTarget = targetPings;
   if (targetPings && targetPings.toUpperCase() === 'SSM') {
-     const roleId = process.env.SSM_ROLE_ID || "989290123977977886";
+     const roleId = process.env.SSM_ROLE_ID || "1075156653789429882";
      formattedTarget = `<@&${roleId}>`;
+  } else if (targetPings) {
+     try {
+       const doc = await getDocument();
+       let foundId = null;
+       
+       const ssmTab = doc.sheetsByTitle['SSMRoster'];
+       if (ssmTab) {
+         const ssmRows = await ssmTab.getRows();
+         const match = ssmRows.find(r => r.get('Name')?.toLowerCase().trim() === targetPings.toLowerCase().trim());
+         if (match) foundId = match.get('Discord ID') || match._rawData[1];
+       }
+       
+       if (!foundId) {
+         const rosterTab = doc.sheetsByTitle['SSRoster'];
+         if (rosterTab) {
+           const rosterRows = await rosterTab.getRows();
+           const match = rosterRows.find(r => r.get('Name')?.toLowerCase().trim() === targetPings.toLowerCase().trim());
+           if (match) foundId = match.get('Discord ID') || match._rawData[4];
+         }
+       }
+       
+       if (foundId) {
+         formattedTarget = `<@${String(foundId).trim()}>`;
+       }
+     } catch (err) {
+       console.error("Failed to fetch Discord ID for ping", err);
+     }
   }
 
   let messageContent = formattedTarget ? `**New Task(s) Assigned To:** ${formattedTarget}\n\n` : `**New Task(s) Logged:**\n\n`;
