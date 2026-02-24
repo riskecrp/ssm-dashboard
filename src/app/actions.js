@@ -105,13 +105,11 @@ export async function manageStaffRecord({ name, action, role, discordId, forumLi
   return { success: true };
 }
 
-// THE RETROACTIVE SYNC ENGINE
 export async function manageLOA({ name, startDate, endDate, action, oldStart, oldEnd }) {
   const doc = await getDocument();
   const loaTab = doc.sheetsByTitle['LOAs'];
   if (!loaTab) return { success: false, error: "LOAs tab not found" };
   
-  // 1. Write to LOA Master Tab
   if (action === 'Delete') {
     const rows = await loaTab.getRows();
     const row = rows.find(r => r.get('Name') === name && r.get('Start Date') === oldStart && r.get('End Date') === oldEnd);
@@ -128,7 +126,6 @@ export async function manageLOA({ name, startDate, endDate, action, oldStart, ol
     await loaTab.addRow({ 'Name': name, 'Start Date': startDate, 'End Date': endDate });
   }
   
-  // 2. Retroactively Overwrite AllStats LOA Column
   const allStatsTab = doc.sheetsByTitle['AllStats'] || doc.sheetsByTitle['Sheet1'];
   if (allStatsTab) {
     const allLoaRows = await loaTab.getRows();
@@ -197,17 +194,14 @@ export async function logSpokenTo({ name, note }) {
   return { success: true };
 }
 
-// THE FORWARD SYNC ENGINE
 export async function commitMonthlyBatch(stagedRows, newLoas = []) {
   const doc = await getDocument();
   const loaTab = doc.sheetsByTitle['LOAs'];
   
-  // 1. Write any newly typed LOAs to the Master Tab first
   if (loaTab && newLoas.length > 0) {
      await loaTab.addRows(newLoas);
   }
 
-  // 2. Read the master tab and force the overlap math onto the snapshot before committing
   if (loaTab) {
      const allLoaRows = await loaTab.getRows();
      
@@ -235,12 +229,11 @@ export async function commitMonthlyBatch(stagedRows, newLoas = []) {
               }
            });
            
-           row['LOA Days'] = totalDays; // Overwrite user input with factual DB math
+           row['LOA Days'] = totalDays; 
         }
      });
   }
 
-  // 3. Commit the perfectly synced snapshot
   const allStatsTab = doc.sheetsByTitle['AllStats'] || doc.sheetsByTitle['Sheet1'];
   if (allStatsTab) await allStatsTab.addRows(stagedRows);
 
@@ -248,7 +241,7 @@ export async function commitMonthlyBatch(stagedRows, newLoas = []) {
   return { success: true };
 }
 
-export async function manageTask({ action, taskId, tasksArray, claimedBy }) {
+export async function manageTask({ action, taskId, tasksArray, claimedBy, newTitle, newDescription, newTarget }) {
   const doc = await getDocument();
   const tasksTab = doc.sheetsByTitle['Tasks'];
   const logsTab = doc.sheetsByTitle['TasksLog']; 
@@ -331,6 +324,22 @@ export async function manageTask({ action, taskId, tasksArray, claimedBy }) {
       }
 
       if (logsTab) await logsTab.addRow({ 'Timestamp': timestamp, 'Task ID': taskId, 'Action': 'Completed', 'Task Title': title, 'Details': `Claimed by: ${row.get('Claimed By') || 'Unclaimed'}` });
+    }
+  } else if (action === 'Edit') {
+    const rows = await tasksTab.getRows();
+    const row = rows.find(r => r.get('Task ID') === taskId);
+    if (row) {
+      if (newTitle !== undefined) row.set('Title', newTitle);
+      if (newDescription !== undefined) row.set('Description', newDescription);
+      if (newTarget !== undefined) row.set('Target', newTarget);
+      await row.save();
+    }
+  } else if (action === 'SilentDelete') {
+    const rows = await tasksTab.getRows();
+    const row = rows.find(r => r.get('Task ID') === taskId);
+    if (row) {
+      await row.delete();
+      // Bypasses the logsTab intentionally
     }
   } else if (action === 'Delete') {
     const rows = await tasksTab.getRows();
