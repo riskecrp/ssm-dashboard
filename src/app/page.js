@@ -116,12 +116,15 @@ export default async function Home() {
     const uniqueDiscordIds = [...new Set(discordIds)];
     const discordNames = {};
 
-    // SEQUENTIAL FETCH FIX: Stops Discord from throwing 429 Rate Limit errors when searching IDs
+    const delay = ms => new Promise(res => setTimeout(res, ms));
+
     if (process.env.DISCORD_BOT_TOKEN && uniqueDiscordIds.length > 0) {
       for (const id of uniqueDiscordIds) {
         try {
-          const res = await fetch(`https://discord.com/api/v10/users/${id}`, {
-            headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}` }
+          const idStr = String(id).trim();
+          const res = await fetch(`https://discord.com/api/v10/users/${idStr}`, {
+            headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}` },
+            cache: 'no-store' 
           });
           if (res.ok) {
             const data = await res.json();
@@ -129,6 +132,7 @@ export default async function Home() {
           } else {
             discordNames[id] = "Not Found";
           }
+          await delay(100); 
         } catch (err) {
           discordNames[id] = "Error";
         }
@@ -178,7 +182,7 @@ export default async function Home() {
         totalForum: parseStat(row.get('Total Forum Reports')),
         totalDiscord: parseStat(row.get('Total Discord')),
         strike: strikeCount,
-        loaDays: parseStat(row.get('LOA Days'))
+        loaDays: parseStat(row.get('LOA Days') || row.get('LOA') || 0) // Pulls absolute truth from DB
       });
     });
 
