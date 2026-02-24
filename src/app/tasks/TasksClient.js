@@ -10,7 +10,6 @@ export default function TasksClient({ initialTasks, ssmNames, activeRosterNames 
   const [editModal, setEditModal] = useState({ isOpen: false, id: "", title: "", description: "", target: "" });
   const [processing, setProcessing] = useState(null);
 
-  // New Batch-Creation State
   const [newTask, setNewTask] = useState({ 
     type: "General", 
     customTitle: "", 
@@ -19,7 +18,7 @@ export default function TasksClient({ initialTasks, ssmNames, activeRosterNames 
     staffInvolved: [] 
   });
 
-  const displayedTasks = initialTasks.filter(t => t.status === viewMode);
+  const displayedTasks = (initialTasks || []).filter(t => t.status === viewMode);
 
   const toggleStaffSelection = (name) => {
     setNewTask(prev => ({
@@ -88,7 +87,7 @@ export default function TasksClient({ initialTasks, ssmNames, activeRosterNames 
         <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] bg-indigo-500/10 rounded-full blur-[120px] animate-pulse" />
       </div>
 
-      <header className="relative z-[100] bg-zinc-900/80 backdrop-blur-3xl border border-white/10 rounded-3xl p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between shadow-[0_0_40px_rgba(0,0,0,0.5)] group gap-6">
+      <header style={{ zIndex: 100 }} className="bg-zinc-900/80 backdrop-blur-3xl border border-white/10 rounded-3xl p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between shadow-[0_0_40px_rgba(0,0,0,0.5)] relative group gap-6">
         <div className="relative z-10 flex flex-col sm:flex-row gap-6 w-full md:w-auto">
           <div>
             <h1 className="text-3xl font-light text-white tracking-tight drop-shadow-[0_0_10px_rgba(255,255,255,0.1)]">Task Workspace</h1>
@@ -130,7 +129,7 @@ export default function TasksClient({ initialTasks, ssmNames, activeRosterNames 
                      {openDropdown === task.id && (
                        <div className="absolute bottom-full mb-2 left-0 w-full bg-zinc-800 border border-zinc-600 rounded-2xl shadow-[0_30px_60px_rgba(0,0,0,0.9)] py-2 max-h-48 overflow-y-auto custom-scrollbar">
                           <div onClick={() => handleAction(task.id, 'Claim', '')} className="px-5 py-3 text-[10px] font-bold cursor-pointer transition-colors text-zinc-400 hover:bg-white/5 hover:text-white uppercase tracking-widest border-b border-white/5">Unclaim</div>
-                          {ssmNames.map(name => (
+                          {(ssmNames || []).map(name => (
                             <div key={name} onClick={() => handleAction(task.id, 'Claim', name)} className={`px-5 py-3 text-[10px] font-bold cursor-pointer transition-colors uppercase tracking-widest ${task.claimedBy === name ? 'bg-indigo-500/20 text-indigo-300' : 'text-zinc-400 hover:bg-white/5 hover:text-white'}`}>{name}</div>
                           ))}
                        </div>
@@ -169,7 +168,7 @@ export default function TasksClient({ initialTasks, ssmNames, activeRosterNames 
                     {openDropdown === 'taskTarget' && (
                       <div className="absolute top-full left-0 mt-2 w-full bg-zinc-800 border border-zinc-600 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden max-h-48 overflow-y-auto custom-scrollbar">
                         <div onClick={() => { setNewTask({...newTask, target: 'SSM'}); setOpenDropdown(null); }} className={`px-5 py-3 text-sm font-bold cursor-pointer transition-colors ${newTask.target === 'SSM' ? 'bg-indigo-500/20 text-white' : 'text-zinc-400 hover:bg-white/10 hover:text-white'}`}>SSM</div>
-                        {ssmNames.map(name => (
+                        {(ssmNames || []).map(name => (
                           <div key={name} onClick={() => { setNewTask({...newTask, target: name}); setOpenDropdown(null); }} className={`px-5 py-3 text-sm font-bold cursor-pointer transition-colors ${newTask.target === name ? 'bg-indigo-500/20 text-white' : 'text-zinc-400 hover:bg-white/10 hover:text-white'}`}>{name}</div>
                         ))}
                       </div>
@@ -198,7 +197,7 @@ export default function TasksClient({ initialTasks, ssmNames, activeRosterNames 
                      <div className="bg-white/[0.02] border border-white/5 p-5 rounded-3xl">
                         <label className="text-[10px] text-indigo-400 uppercase tracking-widest mb-4 block font-black">Staff Involved (Checklist)</label>
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                           {activeRosterNames.map(name => {
+                           {(activeRosterNames || []).map(name => {
                               const isSelected = newTask.staffInvolved.includes(name);
                               return (
                                  <div key={name} onClick={() => toggleStaffSelection(name)} className={`px-3 py-2 text-xs font-bold rounded-xl cursor-pointer border transition-colors flex items-center justify-center text-center ${isSelected ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300' : 'bg-black/30 border-white/5 text-zinc-400 hover:border-white/20'}`}>
@@ -238,7 +237,7 @@ export default function TasksClient({ initialTasks, ssmNames, activeRosterNames 
                   {openDropdown === 'editTarget' && (
                     <div className="absolute top-full left-0 mt-2 w-full bg-zinc-800 border border-zinc-600 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden max-h-48 overflow-y-auto custom-scrollbar">
                       <div onClick={() => { setEditModal({...editModal, target: 'SSM'}); setOpenDropdown(null); }} className={`px-5 py-3 text-sm font-bold cursor-pointer transition-colors ${editModal.target === 'SSM' ? 'bg-indigo-500/20 text-white' : 'text-zinc-400 hover:bg-white/10 hover:text-white'}`}>SSM</div>
-                      {ssmNames.map(name => (
+                      {(ssmNames || []).map(name => (
                         <div key={name} onClick={() => { setEditModal({...editModal, target: name}); setOpenDropdown(null); }} className={`px-5 py-3 text-sm font-bold cursor-pointer transition-colors ${editModal.target === name ? 'bg-indigo-500/20 text-white' : 'text-zinc-400 hover:bg-white/10 hover:text-white'}`}>{name}</div>
                       ))}
                     </div>
