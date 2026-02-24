@@ -14,44 +14,6 @@ const parseSafeDate = (dateStr) => {
   return 0; 
 };
 
-const calculateLoaDays = (monthStr, loas) => {
-  if (!loas || !monthStr) return 0;
-  const parts = monthStr.split('/');
-  if (parts.length !== 3) return 0;
-  
-  let mYear = parseInt(parts[2], 10);
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  let mMonth = months.indexOf(parts[1]);
-  if (mMonth === -1) return 0;
-
-  mMonth = mMonth - 1;
-  if (mMonth < 0) {
-      mMonth = 11;
-      mYear -= 1;
-  }
-
-  const monthStart = new Date(mYear, mMonth, 1);
-  const monthEnd = new Date(mYear, mMonth + 1, 0);
-
-  let days = 0;
-  loas.forEach(loa => {
-     const sParts = String(loa.startDate).split('-');
-     const eParts = String(loa.endDate).split('-');
-     if(sParts.length !== 3 || eParts.length !== 3) return;
-
-     const s = new Date(sParts[0], sParts[1]-1, sParts[2]);
-     const e = new Date(eParts[0], eParts[1]-1, eParts[2]);
-
-     const overlapStart = s > monthStart ? s : monthStart;
-     const overlapEnd = e < monthEnd ? e : monthEnd;
-     
-     if (overlapStart <= overlapEnd) {
-        days += Math.round((overlapEnd - overlapStart) / (1000 * 60 * 60 * 24)) + 1;
-     }
-  });
-  return days;
-};
-
 export default function RosterClient({ initialData, managementData }) {
   const [viewMode, setViewMode] = useState('Active'); 
   const [roleFilter, setRoleFilter] = useState("All"); 
@@ -209,7 +171,7 @@ export default function RosterClient({ initialData, managementData }) {
           <div className="text-[10px] text-zinc-400 font-mono bg-black/40 border border-white/5 px-4 py-3 rounded-xl shadow-inner whitespace-nowrap">
             <span className="text-indigo-400 font-bold text-sm mr-2">{activeCount}</span> TOTAL
           </div>
-          <button onClick={() => setIsAddModalOpen(true)} className="relative z-50 pointer-events-auto px-6 py-3 bg-indigo-600/80 hover:bg-indigo-500 backdrop-blur-md border border-indigo-400/50 rounded-xl text-xs font-bold text-white uppercase tracking-widest shadow-[0_0_20px_rgba(79,70,229,0.4)] transition-all whitespace-nowrap">+ Add Personnel</button>
+          <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setIsAddModalOpen(true); }} className="relative z-[999] pointer-events-auto cursor-pointer px-6 py-3 bg-indigo-600/80 hover:bg-indigo-500 backdrop-blur-md border border-indigo-400/50 rounded-xl text-xs font-bold text-white uppercase tracking-widest shadow-[0_0_20px_rgba(79,70,229,0.4)] transition-all whitespace-nowrap">+ Add Personnel</button>
         </div>
       </header>
 
@@ -217,9 +179,14 @@ export default function RosterClient({ initialData, managementData }) {
         {displayedRoster.map((staff) => {
           const isSenior = staff.rank === 'Senior Support';
           
+          const strikesForCard = (staff.history || [])
+            .filter(h => h.strike > 0)
+            .map(h => ({ date: h.month, action: 'Strike Issued' }));
+
           const cardLifecycle = staff.isManagement ? [] : [
             ...(staff.lifecycle || []).filter(l => !l.action.includes('Spoken To Log') && !l.action.includes('METRIC EXCEPTION')), 
-            ...(staff.spokenToLogs || []).map(log => ({ date: log.timestamp, action: log.note.startsWith('METRIC EXCEPTION') ? 'METRIC EXCEPTION' : 'Spoken To Log' }))
+            ...(staff.spokenToLogs || []).map(log => ({ date: log.timestamp, action: log.note.startsWith('METRIC EXCEPTION') ? 'METRIC EXCEPTION' : 'Spoken To Log' })),
+            ...strikesForCard
           ].sort((a, b) => parseSafeDate(b.date) - parseSafeDate(a.date));
 
           return (
@@ -265,7 +232,7 @@ export default function RosterClient({ initialData, managementData }) {
                       </>
                     )}
                     {!staff.isManagement && viewMode === 'Inactive' && (
-                      <button disabled={processing === staff.name} onClick={(e) => { e.stopPropagation(); setReinstateModal({ isOpen: true, name: staff.name, role: 'Support' }); }} className="relative z-50 pointer-events-auto px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/40 border border-emerald-500/30 rounded-lg text-[9px] font-bold uppercase tracking-widest text-emerald-300 transition-colors">Reinstate</button>
+                      <button disabled={processing === staff.name} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setReinstateModal({ isOpen: true, name: staff.name, role: 'Support' }); }} className="relative z-[999] pointer-events-auto cursor-pointer px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/40 border border-emerald-500/30 rounded-lg text-[9px] font-bold uppercase tracking-widest text-emerald-300 transition-colors">Reinstate</button>
                     )}
                   </div>
                 </div>
@@ -348,7 +315,6 @@ export default function RosterClient({ initialData, managementData }) {
                             const metIG = ev.stats.newIG >= igTarget;
                             const graceIG = ev.stats.newIG >= igGraceTarget && !metIG;
                             
-                            // Badge Status exclusively tied to IG
                             const status = metIG ? 'MET' : graceIG ? 'GRACE' : 'MISSED';
                             
                             const badgeClass = status === 'MET' ? 'bg-emerald-500/20 text-emerald-400' : status === 'GRACE' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400';
