@@ -339,7 +339,6 @@ export async function manageTask({ action, taskId, tasksArray, claimedBy, newTit
     const row = rows.find(r => r.get('Task ID') === taskId);
     if (row) {
       await row.delete();
-      // Bypasses the logsTab intentionally
     }
   } else if (action === 'Delete') {
     const rows = await tasksTab.getRows();
@@ -369,7 +368,7 @@ export async function pingDiscordTask({ tasksArray, targetPings }) {
   
   let formattedTarget = targetPings;
   if (targetPings && targetPings.toUpperCase() === 'SSM') {
-     const roleId = process.env.SSM_ROLE_ID || "YOUR_SSM_ROLE_ID_HERE";
+     const roleId = process.env.SSM_ROLE_ID || "989290123977977886";
      formattedTarget = `<@&${roleId}>`;
   }
 
