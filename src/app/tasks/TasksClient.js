@@ -127,13 +127,28 @@ export default function TasksClient({ initialTasks, ssmNames }) {
       </div>
 
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-md p-4">
-          <div className="bg-zinc-900/90 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 w-full max-w-md shadow-[0_0_60px_rgba(0,0,0,0.8)] relative overflow-hidden">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-md p-4" onClick={() => setOpenDropdown(null)}>
+          <div className="bg-zinc-900/90 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 w-full max-w-md shadow-[0_0_60px_rgba(0,0,0,0.8)] relative overflow-visible">
             <div className="absolute -top-40 -left-40 w-96 h-96 bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none transition-all duration-700" />
             <div className="relative z-10">
               <h3 className="text-3xl font-light text-white mb-8 tracking-tight">Create Task</h3>
               <div className="space-y-5 mb-8">
-                <div><label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 block font-bold">Target (Ping)</label><input type="text" className="w-full p-4 rounded-2xl bg-black/40 border border-white/5 text-white outline-none focus:border-indigo-500 transition-all shadow-inner text-sm" value={newTask.target} onChange={(e) => setNewTask({...newTask, target: e.target.value})} placeholder="e.g. SSM or Staff Name" /></div>
+                
+                <div className="relative" onClick={(e) => e.stopPropagation()}>
+                  <label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 block font-bold">Target (Ping)</label>
+                  <div onClick={() => setOpenDropdown(openDropdown === 'taskTarget' ? null : 'taskTarget')} className="w-full p-4 rounded-2xl bg-black/40 border border-white/5 text-white text-sm cursor-pointer shadow-inner flex items-center justify-between transition-all hover:border-indigo-500">
+                    <span>{newTask.target}</span><span className="text-[9px] text-zinc-500">▼</span>
+                  </div>
+                  {openDropdown === 'taskTarget' && (
+                    <div className="absolute top-full left-0 mt-2 w-full bg-zinc-800 border border-zinc-600 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden max-h-48 overflow-y-auto custom-scrollbar">
+                      <div onClick={() => { setNewTask({...newTask, target: 'SSM'}); setOpenDropdown(null); }} className={`px-5 py-3 text-sm font-bold cursor-pointer transition-colors ${newTask.target === 'SSM' ? 'bg-indigo-500/20 text-white' : 'text-zinc-400 hover:bg-white/10 hover:text-white'}`}>SSM</div>
+                      {ssmNames.map(name => (
+                        <div key={name} onClick={() => { setNewTask({...newTask, target: name}); setOpenDropdown(null); }} className={`px-5 py-3 text-sm font-bold cursor-pointer transition-colors ${newTask.target === name ? 'bg-indigo-500/20 text-white' : 'text-zinc-400 hover:bg-white/10 hover:text-white'}`}>{name}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <div><label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 block font-bold">Task Title</label><input type="text" className="w-full p-4 rounded-2xl bg-black/40 border border-white/5 text-white outline-none focus:border-indigo-500 transition-all shadow-inner text-sm" value={newTask.title} onChange={(e) => setNewTask({...newTask, title: e.target.value})} placeholder="Action required..." /></div>
                 <div><label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 block font-bold">Description</label><textarea className="w-full h-32 p-4 rounded-2xl bg-black/40 border border-white/5 text-white outline-none focus:border-indigo-500 transition-all shadow-inner text-sm custom-scrollbar" value={newTask.description} onChange={(e) => setNewTask({...newTask, description: e.target.value})} placeholder="Additional details..." /></div>
               </div>
@@ -147,13 +162,28 @@ export default function TasksClient({ initialTasks, ssmNames }) {
       )}
 
       {editModal.isOpen && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-md p-4">
-          <div className="bg-zinc-900/90 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 w-full max-w-md shadow-[0_0_60px_rgba(0,0,0,0.8)] relative overflow-hidden">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-md p-4" onClick={() => setOpenDropdown(null)}>
+          <div className="bg-zinc-900/90 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 w-full max-w-md shadow-[0_0_60px_rgba(0,0,0,0.8)] relative overflow-visible">
             <div className="absolute -top-40 -left-40 w-96 h-96 bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none transition-all duration-700" />
             <div className="relative z-10">
               <h3 className="text-3xl font-light text-white mb-8 tracking-tight">Edit Task</h3>
               <div className="space-y-5 mb-8">
-                <div><label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 block font-bold">Target (Ping)</label><input type="text" className="w-full p-4 rounded-2xl bg-black/40 border border-white/5 text-white outline-none focus:border-indigo-500 transition-all shadow-inner text-sm" value={editModal.target} onChange={(e) => setEditModal({...editModal, target: e.target.value})} /></div>
+                
+                <div className="relative" onClick={(e) => e.stopPropagation()}>
+                  <label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 block font-bold">Target (Ping)</label>
+                  <div onClick={() => setOpenDropdown(openDropdown === 'editTarget' ? null : 'editTarget')} className="w-full p-4 rounded-2xl bg-black/40 border border-white/5 text-white text-sm cursor-pointer shadow-inner flex items-center justify-between transition-all hover:border-indigo-500">
+                    <span>{editModal.target}</span><span className="text-[9px] text-zinc-500">▼</span>
+                  </div>
+                  {openDropdown === 'editTarget' && (
+                    <div className="absolute top-full left-0 mt-2 w-full bg-zinc-800 border border-zinc-600 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden max-h-48 overflow-y-auto custom-scrollbar">
+                      <div onClick={() => { setEditModal({...editModal, target: 'SSM'}); setOpenDropdown(null); }} className={`px-5 py-3 text-sm font-bold cursor-pointer transition-colors ${editModal.target === 'SSM' ? 'bg-indigo-500/20 text-white' : 'text-zinc-400 hover:bg-white/10 hover:text-white'}`}>SSM</div>
+                      {ssmNames.map(name => (
+                        <div key={name} onClick={() => { setEditModal({...editModal, target: name}); setOpenDropdown(null); }} className={`px-5 py-3 text-sm font-bold cursor-pointer transition-colors ${editModal.target === name ? 'bg-indigo-500/20 text-white' : 'text-zinc-400 hover:bg-white/10 hover:text-white'}`}>{name}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <div><label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 block font-bold">Task Title</label><input type="text" className="w-full p-4 rounded-2xl bg-black/40 border border-white/5 text-white outline-none focus:border-indigo-500 transition-all shadow-inner text-sm" value={editModal.title} onChange={(e) => setEditModal({...editModal, title: e.target.value})} /></div>
                 <div><label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 block font-bold">Description</label><textarea className="w-full h-32 p-4 rounded-2xl bg-black/40 border border-white/5 text-white outline-none focus:border-indigo-500 transition-all shadow-inner text-sm custom-scrollbar" value={editModal.description} onChange={(e) => setEditModal({...editModal, description: e.target.value})} /></div>
               </div>
