@@ -38,7 +38,6 @@ function TimeFilter({ mode, setMode, month, setMonth, range, setRange, available
   );
 }
 
-// Strict String-Based LOA Calculator (With 1-Month Backward Shift)
 const calculateLoaDays = (monthStr, loas) => {
   if (!loas || !monthStr) return 0;
   const parts = monthStr.split('/');
@@ -49,7 +48,6 @@ const calculateLoaDays = (monthStr, loas) => {
   let mMonth = months.indexOf(parts[1]);
   if (mMonth === -1) return 0;
 
-  // SHIFT TO PREVIOUS MONTH FOR EVALUATION
   mMonth = mMonth - 1;
   if (mMonth < 0) {
       mMonth = 11;
@@ -213,9 +211,9 @@ export default function StatisticsClient({ initialData }) {
       
       const metIG = h.newIG >= igTarget;
       const graceIG = h.newIG >= igGraceTarget && !metIG;
-      const metForum = isSenior ? h.newForum >= forumTarget : true;
       
-      const status = (metIG && metForum) ? 'MET' : (graceIG && metForum) ? 'GRACE' : 'MISSED';
+      // Status mathematically ignores Forum. 
+      const status = metIG ? 'MET' : graceIG ? 'GRACE' : 'MISSED';
       
       return { ...h, status, igTarget, igGraceTarget, forumTarget, isSenior };
     });
@@ -232,16 +230,14 @@ export default function StatisticsClient({ initialData }) {
 
     const individuals = initialData.map(s => {
       let ig = 0, forum = 0, discord = 0, metCount = 0, totalEligible = 0;
-      const isSenior = s.rank === 'Senior Support';
       
       const calculateStatus = (h) => {
          const dynamicLoaDays = calculateLoaDays(h.month, s.loas);
          const igTarget = Math.max(0, 30 - dynamicLoaDays);
          const igGraceTarget = Math.max(0, igTarget - 5);
-         const metForum = isSenior ? h.newForum >= 5 : true;
          const metIG = h.newIG >= igTarget;
          const graceIG = h.newIG >= igGraceTarget && !metIG;
-         return (metIG && metForum) || (graceIG && metForum); 
+         return metIG || graceIG; // True if Reliable based purely on IG
       };
 
       if (compTimeMode === 'Overall') {
@@ -268,7 +264,7 @@ export default function StatisticsClient({ initialData }) {
         });
       }
 
-      if (isSenior) {
+      if (s.rank === 'Senior Support') {
           seniorIgSum += ig; seniorForumSum += forum; seniorDiscordSum += discord; seniorCount++;
           seniorMetCount += metCount; seniorTotalEligible += totalEligible;
       } else {
@@ -319,7 +315,6 @@ export default function StatisticsClient({ initialData }) {
   };
 
   const comparisonData = compareSelected.map(name => comparePerformance.find(s => s.name === name)).filter(Boolean);
-
   const isAllSupportSelected = activeStaffOptions.filter(s => s.rank === 'Support').length > 0 && activeStaffOptions.filter(s => s.rank === 'Support').every(s => compareSelected.includes(s.name));
   const isAllSeniorSelected = activeStaffOptions.filter(s => s.rank === 'Senior Support').length > 0 && activeStaffOptions.filter(s => s.rank === 'Senior Support').every(s => compareSelected.includes(s.name));
 
@@ -346,28 +341,31 @@ export default function StatisticsClient({ initialData }) {
               <h2 className="text-sm font-bold text-red-100 uppercase tracking-widest">Metric Evaluator: {mostRecentMonth}</h2>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-              {missedQuotaEvaluations.map(s => (
-                <div key={s.name} className="bg-black/50 border border-red-500/20 rounded-xl p-4 flex flex-col gap-3 group hover:border-red-500/50 transition-colors">
-                  <div className="flex justify-between items-center">
-                    <span className="font-bold text-white text-sm">{s.name}</span>
-                    <span className="text-[8px] uppercase tracking-widest text-red-300 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20">{s.isSenior ? 'Senior' : 'Support'}</span>
+              {missedQuotaEvaluations.map(s => {
+                const isAmber = s.onlyForumMissed;
+                return (
+                  <div key={s.name} className={`bg-black/50 border rounded-xl p-4 flex flex-col gap-3 group transition-colors ${isAmber ? 'border-amber-500/30 hover:border-amber-500/60' : 'border-red-500/20 hover:border-red-500/50'}`}>
+                    <div className="flex justify-between items-center">
+                      <span className={`font-bold text-sm ${isAmber ? 'text-amber-100' : 'text-white'}`}>{s.name}</span>
+                      <span className={`text-[8px] uppercase tracking-widest px-1.5 py-0.5 rounded border ${isAmber ? 'bg-amber-500/10 text-amber-300 border-amber-500/30' : 'bg-red-500/10 text-red-300 border-red-500/20'}`}>{s.isSenior ? 'Senior' : 'Support'}</span>
+                    </div>
+                    <div className={`flex justify-between text-[10px] font-mono p-2 rounded-lg ${isAmber ? 'bg-amber-900/20 text-amber-400/70' : 'bg-white/5 text-zinc-400'}`}>
+                      <span>IG: <span className={s.missedIG ? 'text-red-400 font-bold' : isAmber ? 'text-amber-400 font-bold' : 'text-zinc-400'}>{s.monthData.newIG}</span> / {s.igTarget}</span>
+                      {s.isSenior && (
+                        <span>FR: <span className={s.missedForum ? (isAmber ? 'text-amber-500 font-bold' : 'text-red-400 font-bold') : 'text-zinc-400'}>{s.monthData.newForum}</span> / {s.forumTarget}</span>
+                      )}
+                    </div>
+                    <div className="flex gap-2 mt-1">
+                      <button disabled={processing === `strike-${s.name}`} onClick={() => handleConfirmStrike(s.name, isAmber ? 'Forum' : 'Metric')} className={`flex-1 py-2 rounded-lg text-[9px] font-bold text-white uppercase tracking-widest transition-all shadow-md ${isAmber ? 'bg-amber-600/60 hover:bg-amber-500' : 'bg-red-600/80 hover:bg-red-500'}`}>{processing === `strike-${s.name}` ? '...' : 'Strike Task'}</button>
+                      {isAmber ? (
+                        <button onClick={() => setDismissedEvaluations(prev => [...prev, s.name])} className="flex-1 py-2 bg-black/40 hover:bg-white/5 border border-white/10 rounded-lg text-[9px] font-bold text-zinc-400 hover:text-white uppercase tracking-widest transition-all">Dismiss</button>
+                      ) : (
+                        <button onClick={() => setExceptionModal({ isOpen: true, name: s.name, reason: "" })} className="flex-1 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-[9px] font-bold text-zinc-300 uppercase tracking-widest transition-all">Exception</button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex justify-between text-[10px] font-mono text-zinc-400 bg-white/5 p-2 rounded-lg">
-                    <span>IG: <span className={s.missedIG ? 'text-red-400 font-bold' : 'text-zinc-400'}>{s.monthData.newIG}</span> / {s.igTarget}</span>
-                    {s.isSenior && (
-                      <span>FR: <span className={s.missedForum ? 'text-red-400 font-bold' : 'text-zinc-400'}>{s.monthData.newForum}</span> / {s.forumTarget}</span>
-                    )}
-                  </div>
-                  <div className="flex gap-2 mt-1">
-                    <button disabled={processing === `strike-${s.name}`} onClick={() => handleConfirmStrike(s.name, s.onlyForumMissed ? 'Forum' : 'Metric')} className="flex-1 py-2 bg-red-600/80 hover:bg-red-500 rounded-lg text-[9px] font-bold text-white uppercase tracking-widest transition-all shadow-md">{processing === `strike-${s.name}` ? '...' : 'Strike Task'}</button>
-                    {s.onlyForumMissed ? (
-                      <button onClick={() => setDismissedEvaluations(prev => [...prev, s.name])} className="flex-1 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-[9px] font-bold text-zinc-300 uppercase tracking-widest transition-all">Dismiss</button>
-                    ) : (
-                      <button onClick={() => setExceptionModal({ isOpen: true, name: s.name, reason: "" })} className="flex-1 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-[9px] font-bold text-zinc-300 uppercase tracking-widest transition-all">Exception</button>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
         )}
@@ -435,7 +433,6 @@ export default function StatisticsClient({ initialData }) {
         )}
       </section>
 
-      {/* TABLE DATA-VIEW FOR CUSTOM COMPARISON */}
       <section className="relative z-30 bg-zinc-900/60 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-10 shadow-xl">
          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6 mb-8 border-b border-white/5 pb-6">
             <div>
@@ -450,7 +447,7 @@ export default function StatisticsClient({ initialData }) {
                   <span>Add Staff to Compare...</span><span className="text-[8px] text-zinc-500 ml-3">▼</span>
                 </div>
                 {openDropdown === 'compareSelect' && (
-                  <div className="absolute top-full right-0 mt-2 w-full bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl py-2 max-h-[300px] overflow-y-auto custom-scrollbar z-[120]">
+                  <div className="absolute top-full right-0 mt-2 w-full bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl z-50 py-2 max-h-[300px] overflow-y-auto custom-scrollbar">
                     <div onClick={() => toggleCompare('[Group] All Support')} className={`px-5 py-3 text-xs font-bold cursor-pointer transition-colors flex justify-between items-center ${isAllSupportSelected ? 'bg-indigo-500/20 text-white' : 'text-amber-400 hover:bg-white/5 hover:text-white'}`}>
                       <span>[Group] All Support</span>
                       {isAllSupportSelected && <span className="text-[8px] uppercase tracking-widest text-indigo-400 font-black">Selected</span>}
@@ -568,6 +565,7 @@ function HistoryLedger({ title, data }) {
       <h3 className="text-[10px] text-zinc-500 uppercase tracking-[0.2em] font-black mb-4 border-b border-white/5 pb-3">{title}</h3>
       <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
         {data.map((h, i) => {
+          // Badges completely ignore Forum status now. Only IG matters.
           const badgeClass = h.status === 'MET' ? 'bg-emerald-500/20 text-emerald-400' : h.status === 'GRACE' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400';
           const borderClass = h.status === 'MET' ? 'border-emerald-500/20' : h.status === 'GRACE' ? 'border-yellow-500/20' : 'border-red-500/20';
           const igClass = h.newIG >= h.igTarget ? 'text-emerald-400 font-bold' : h.newIG >= h.igGraceTarget ? 'text-yellow-400 font-bold' : 'text-red-400 font-bold';
