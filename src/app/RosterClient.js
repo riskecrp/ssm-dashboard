@@ -14,6 +14,33 @@ const parseSafeDate = (dateStr) => {
   return 0; 
 };
 
+// Real-time LOA calculation engine
+const calculateLoaDays = (monthStr, loas) => {
+  if (!loas || !monthStr) return 0;
+  const targetDate = new Date(monthStr.replace(/\//g, ' '));
+  if (isNaN(targetDate)) return 0;
+  
+  const mYear = targetDate.getFullYear();
+  const mMonth = targetDate.getMonth();
+  const monthStart = new Date(mYear, mMonth, 1);
+  const monthEnd = new Date(mYear, mMonth + 1, 0);
+
+  let days = 0;
+  loas.forEach(loa => {
+     const s = new Date(loa.startDate);
+     const e = new Date(loa.endDate);
+     if (isNaN(s) || isNaN(e)) return;
+     
+     const overlapStart = s > monthStart ? s : monthStart;
+     const overlapEnd = e < monthEnd ? e : monthEnd;
+     
+     if (overlapStart <= overlapEnd) {
+        days += Math.ceil((overlapEnd - overlapStart) / (1000 * 60 * 60 * 24)) + 1;
+     }
+  });
+  return days;
+};
+
 export default function RosterClient({ initialData, managementData }) {
   const [viewMode, setViewMode] = useState('Active'); 
   const [roleFilter, setRoleFilter] = useState("All"); 
@@ -302,17 +329,19 @@ export default function RosterClient({ initialData, managementData }) {
                         <div className="flex-1 w-full">
                           {ev.type === 'stats' && (() => {
                             const isSenior = selectedStaffStats.rank === 'Senior Support';
-                            const igTarget = Math.max(0, 30 - (ev.stats.loaDays || 0));
+                            const dynamicLoaDays = calculateLoaDays(ev.stats.month, selectedStaffStats.loas);
+                            const igTarget = Math.max(0, 30 - dynamicLoaDays);
+                            const igGraceTarget = Math.max(0, igTarget - 5);
                             const forumTarget = isSenior ? 5 : 0;
                             
                             const metIG = ev.stats.newIG >= igTarget;
-                            const graceIG = ev.stats.newIG >= 25 && !metIG;
+                            const graceIG = ev.stats.newIG >= igGraceTarget && !metIG;
                             const metForum = isSenior ? ev.stats.newForum >= forumTarget : true;
                             
                             const status = (metIG && metForum) ? 'MET' : (graceIG && metForum) ? 'GRACE' : 'MISSED';
                             
                             const badgeClass = status === 'MET' ? 'bg-emerald-500/20 text-emerald-400' : status === 'GRACE' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400';
-                            const igClass = ev.stats.newIG >= igTarget ? 'text-emerald-400 font-bold' : ev.stats.newIG >= 25 ? 'text-yellow-400 font-bold' : 'text-red-400 font-bold';
+                            const igClass = ev.stats.newIG >= igTarget ? 'text-emerald-400 font-bold' : ev.stats.newIG >= igGraceTarget ? 'text-yellow-400 font-bold' : 'text-red-400 font-bold';
 
                             return (
                               <div className="text-xs font-mono text-zinc-400 space-y-1">
