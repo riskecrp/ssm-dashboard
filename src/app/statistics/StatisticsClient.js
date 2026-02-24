@@ -38,6 +38,33 @@ function TimeFilter({ mode, setMode, month, setMonth, range, setRange, available
   );
 }
 
+// Real-time LOA calculation engine
+const calculateLoaDays = (monthStr, loas) => {
+  if (!loas || !monthStr) return 0;
+  const targetDate = new Date(monthStr.replace(/\//g, ' '));
+  if (isNaN(targetDate)) return 0;
+  
+  const mYear = targetDate.getFullYear();
+  const mMonth = targetDate.getMonth();
+  const monthStart = new Date(mYear, mMonth, 1);
+  const monthEnd = new Date(mYear, mMonth + 1, 0);
+
+  let days = 0;
+  loas.forEach(loa => {
+     const s = new Date(loa.startDate);
+     const e = new Date(loa.endDate);
+     if (isNaN(s) || isNaN(e)) return;
+     
+     const overlapStart = s > monthStart ? s : monthStart;
+     const overlapEnd = e < monthEnd ? e : monthEnd;
+     
+     if (overlapStart <= overlapEnd) {
+        days += Math.ceil((overlapEnd - overlapStart) / (1000 * 60 * 60 * 24)) + 1;
+     }
+  });
+  return days;
+};
+
 export default function StatisticsClient({ initialData }) {
   const [openDropdown, setOpenDropdown] = useState(null);
   
@@ -87,7 +114,8 @@ export default function StatisticsClient({ initialData }) {
        const h = s.history.find(x => x.month === mostRecentMonth);
        if (!h) return null;
        
-       const igTarget = Math.max(0, 30 - (h.loaDays || 0));
+       const dynamicLoaDays = calculateLoaDays(mostRecentMonth, s.loas);
+       const igTarget = Math.max(0, 30 - dynamicLoaDays);
        const igGraceTarget = Math.max(0, igTarget - 5);
        const isSenior = s.rank === 'Senior Support';
        const forumTarget = isSenior ? 5 : 0;
@@ -95,7 +123,6 @@ export default function StatisticsClient({ initialData }) {
        const missedIG = h.newIG < igGraceTarget;
        const metForum = isSenior ? h.newForum >= forumTarget : true;
        
-       // If they hit grace or target for IG, AND met forum, they are safe.
        if (!missedIG && metForum) return null; 
        if (h.strike > 0) return null; 
        
@@ -160,7 +187,8 @@ export default function StatisticsClient({ initialData }) {
     const isSenior = data.rank === 'Senior Support';
     
     const historyWithQuota = data.history.slice(0, 6).map(h => {
-      const igTarget = Math.max(0, 30 - (h.loaDays || 0));
+      const dynamicLoaDays = calculateLoaDays(h.month, data.loas);
+      const igTarget = Math.max(0, 30 - dynamicLoaDays);
       const igGraceTarget = Math.max(0, igTarget - 5);
       const forumTarget = isSenior ? 5 : 0;
       
@@ -180,15 +208,13 @@ export default function StatisticsClient({ initialData }) {
   }, [initialData, selectedStaffName]);
 
   const comparePerformance = useMemo(() => {
-    let supportIgSum = 0, supportForumSum = 0, supportDiscordSum = 0, supportMetCount = 0, supportTotalEligible = 0, supportCount = 0;
-    let seniorIgSum = 0, seniorForumSum = 0, seniorDiscordSum = 0, seniorMetCount = 0, seniorTotalEligible = 0, seniorCount = 0;
-
-    const individuals = initialData.map(s => {
+    return initialData.map(s => {
       let ig = 0, forum = 0, discord = 0, metCount = 0, totalEligible = 0;
       const isSenior = s.rank === 'Senior Support';
       
       const calculateStatus = (h) => {
-         const igTarget = Math.max(0, 30 - (h.loaDays || 0));
+         const dynamicLoaDays = calculateLoaDays(h.month, s.loas);
+         const igTarget = Math.max(0, 30 - dynamicLoaDays);
          const igGraceTarget = Math.max(0, igTarget - 5);
          const metForum = isSenior ? h.newForum >= 5 : true;
          const metIG = h.newIG >= igTarget;
@@ -220,43 +246,34 @@ export default function StatisticsClient({ initialData }) {
         });
       }
 
-      if (isSenior) {
-          seniorIgSum += ig; seniorForumSum += forum; seniorDiscordSum += discord; seniorCount++;
-          seniorMetCount += metCount; seniorTotalEligible += totalEligible;
-      } else {
-          supportIgSum += ig; supportForumSum += forum; supportDiscordSum += discord; supportCount++;
-          supportMetCount += metCount; supportTotalEligible += totalEligible;
-      }
-
       const reliability = totalEligible > 0 ? Math.round((metCount / totalEligible) * 100) : 0;
       return { name: s.name, ig, forum, discord, reliability, rank: s.rank };
     });
-
-    individuals.push({
-        name: '[Group] All Support', rank: 'Support', isGroup: true,
-        ig: supportCount ? Math.round(supportIgSum / supportCount) : 0,
-        forum: supportCount ? Math.round(supportForumSum / supportCount) : 0,
-        discord: supportCount ? Math.round(supportDiscordSum / supportCount) : 0,
-        reliability: supportTotalEligible ? Math.round((supportMetCount / supportTotalEligible) * 100) : 0
-    });
-    
-    individuals.push({
-        name: '[Group] All Senior Support', rank: 'Senior Support', isGroup: true,
-        ig: seniorCount ? Math.round(seniorIgSum / seniorCount) : 0,
-        forum: seniorCount ? Math.round(seniorForumSum / seniorCount) : 0,
-        discord: seniorCount ? Math.round(seniorDiscordSum / seniorCount) : 0,
-        reliability: seniorTotalEligible ? Math.round((seniorMetCount / seniorTotalEligible) * 100) : 0
-    });
-
-    return individuals;
   }, [initialData, compTimeMode, compMonth, compRange]);
 
   const toggleCompare = (name) => {
+    if (name === '[Group] All Support') {
+       const supportNames = staffOptions.filter(s => s.rank === 'Support').map(s => s.name);
+       const allSelected = supportNames.every(n => compareSelected.includes(n));
+       if (allSelected) { setCompareSelected(prev => prev.filter(n => !supportNames.includes(n))); } 
+       else { setCompareSelected(prev => Array.from(new Set([...prev, ...supportNames]))); }
+       return;
+    }
+    if (name === '[Group] All Senior Support') {
+       const seniorNames = staffOptions.filter(s => s.rank === 'Senior Support').map(s => s.name);
+       const allSelected = seniorNames.every(n => compareSelected.includes(n));
+       if (allSelected) { setCompareSelected(prev => prev.filter(n => !seniorNames.includes(n))); } 
+       else { setCompareSelected(prev => Array.from(new Set([...prev, ...seniorNames]))); }
+       return;
+    }
     if (compareSelected.includes(name)) setCompareSelected(prev => prev.filter(n => n !== name));
     else setCompareSelected(prev => [...prev, name]);
   };
 
   const comparisonData = compareSelected.map(name => comparePerformance.find(s => s.name === name)).filter(Boolean);
+
+  const isAllSupportSelected = staffOptions.filter(s => s.rank === 'Support').length > 0 && staffOptions.filter(s => s.rank === 'Support').every(s => compareSelected.includes(s.name));
+  const isAllSeniorSelected = staffOptions.filter(s => s.rank === 'Senior Support').length > 0 && staffOptions.filter(s => s.rank === 'Senior Support').every(s => compareSelected.includes(s.name));
 
   return (
     <div className="p-4 md:p-8 lg:p-12 max-w-[1600px] mx-auto space-y-10 relative min-h-screen" onClick={() => setOpenDropdown(null)}>
@@ -385,13 +402,13 @@ export default function StatisticsClient({ initialData }) {
                 </div>
                 {openDropdown === 'compareSelect' && (
                   <div className="absolute top-full right-0 mt-2 w-full bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl py-2 max-h-[300px] overflow-y-auto custom-scrollbar z-[120]">
-                    <div onClick={() => toggleCompare('[Group] All Support')} className={`px-5 py-3 text-xs font-bold cursor-pointer transition-colors flex justify-between items-center ${compareSelected.includes('[Group] All Support') ? 'bg-indigo-500/20 text-white' : 'text-amber-400 hover:bg-white/5 hover:text-white'}`}>
+                    <div onClick={() => toggleCompare('[Group] All Support')} className={`px-5 py-3 text-xs font-bold cursor-pointer transition-colors flex justify-between items-center ${isAllSupportSelected ? 'bg-indigo-500/20 text-white' : 'text-amber-400 hover:bg-white/5 hover:text-white'}`}>
                       <span>[Group] All Support</span>
-                      {compareSelected.includes('[Group] All Support') && <span className="text-[8px] uppercase tracking-widest text-indigo-400 font-black">Selected</span>}
+                      {isAllSupportSelected && <span className="text-[8px] uppercase tracking-widest text-indigo-400 font-black">Selected</span>}
                     </div>
-                    <div onClick={() => toggleCompare('[Group] All Senior Support')} className={`px-5 py-3 text-xs font-bold cursor-pointer transition-colors flex justify-between items-center ${compareSelected.includes('[Group] All Senior Support') ? 'bg-indigo-500/20 text-white' : 'text-amber-400 hover:bg-white/5 hover:text-white'}`}>
+                    <div onClick={() => toggleCompare('[Group] All Senior Support')} className={`px-5 py-3 text-xs font-bold cursor-pointer transition-colors flex justify-between items-center ${isAllSeniorSelected ? 'bg-indigo-500/20 text-white' : 'text-amber-400 hover:bg-white/5 hover:text-white'}`}>
                       <span>[Group] All Senior Support</span>
-                      {compareSelected.includes('[Group] All Senior Support') && <span className="text-[8px] uppercase tracking-widest text-indigo-400 font-black">Selected</span>}
+                      {isAllSeniorSelected && <span className="text-[8px] uppercase tracking-widest text-indigo-400 font-black">Selected</span>}
                     </div>
                     <div className="border-t border-zinc-700 my-1" />
                     {staffOptions.map(s => (
@@ -411,7 +428,7 @@ export default function StatisticsClient({ initialData }) {
              {comparisonData.map((staff, i) => (
                <div key={i} className="bg-black/30 border border-white/5 rounded-3xl p-8 min-w-[280px] shadow-inner relative group hover:border-indigo-500/30 transition-all">
                  <button onClick={() => toggleCompare(staff.name)} className="absolute top-4 right-4 text-zinc-600 hover:text-red-400 transition-colors font-bold text-lg">✕</button>
-                 <h3 className={`text-2xl font-light tracking-tight mb-1 ${staff.isGroup ? 'text-amber-400' : 'text-white'}`}>{staff.name}</h3>
+                 <h3 className={`text-2xl font-light tracking-tight mb-1 text-white`}>{staff.name}</h3>
                  <div className={`inline-block px-3 py-1 rounded-md text-[8px] font-bold uppercase tracking-widest mb-6 ${staff.rank === 'Senior Support' ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' : 'bg-white/5 text-zinc-400 border border-white/10'}`}>{staff.rank}</div>
                  
                  <div className="bg-white/[0.02] border border-white/5 rounded-xl p-4 text-center mb-6">
