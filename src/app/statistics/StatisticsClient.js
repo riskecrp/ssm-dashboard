@@ -38,7 +38,6 @@ function TimeFilter({ mode, setMode, month, setMonth, range, setRange, available
   );
 }
 
-// Real-time LOA calculation engine
 const calculateLoaDays = (monthStr, loas) => {
   if (!loas || !monthStr) return 0;
   const targetDate = new Date(monthStr.replace(/\//g, ' '));
@@ -271,7 +270,6 @@ export default function StatisticsClient({ initialData }) {
   };
 
   const comparisonData = compareSelected.map(name => comparePerformance.find(s => s.name === name)).filter(Boolean);
-
   const isAllSupportSelected = staffOptions.filter(s => s.rank === 'Support').length > 0 && staffOptions.filter(s => s.rank === 'Support').every(s => compareSelected.includes(s.name));
   const isAllSeniorSelected = staffOptions.filter(s => s.rank === 'Senior Support').length > 0 && staffOptions.filter(s => s.rank === 'Senior Support').every(s => compareSelected.includes(s.name));
 
@@ -387,11 +385,12 @@ export default function StatisticsClient({ initialData }) {
         )}
       </section>
 
+      {/* TABLE DATA-VIEW FOR CUSTOM COMPARISON */}
       <section className="relative z-30 bg-zinc-900/60 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-10 shadow-xl">
          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6 mb-8 border-b border-white/5 pb-6">
             <div>
                <h2 className="text-3xl font-light text-white tracking-tight">Custom Comparison</h2>
-               <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-2 font-bold font-mono">1-to-1 Evaluation</p>
+               <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-2 font-bold font-mono">1-to-1 Data Grid</p>
             </div>
             
             <div className="flex flex-col sm:flex-row gap-4 items-center">
@@ -424,27 +423,42 @@ export default function StatisticsClient({ initialData }) {
          </div>
 
          {comparisonData.length > 0 ? (
-           <div className="flex gap-6 overflow-x-auto custom-scrollbar pb-4">
-             {comparisonData.map((staff, i) => (
-               <div key={i} className="bg-black/30 border border-white/5 rounded-3xl p-8 min-w-[280px] shadow-inner relative group hover:border-indigo-500/30 transition-all">
-                 <button onClick={() => toggleCompare(staff.name)} className="absolute top-4 right-4 text-zinc-600 hover:text-red-400 transition-colors font-bold text-lg">✕</button>
-                 <h3 className={`text-2xl font-light tracking-tight mb-1 text-white`}>{staff.name}</h3>
-                 <div className={`inline-block px-3 py-1 rounded-md text-[8px] font-bold uppercase tracking-widest mb-6 ${staff.rank === 'Senior Support' ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' : 'bg-white/5 text-zinc-400 border border-white/10'}`}>{staff.rank}</div>
-                 
-                 <div className="bg-white/[0.02] border border-white/5 rounded-xl p-4 text-center mb-6">
-                   <div className="text-[9px] text-zinc-500 uppercase tracking-widest font-black mb-1">Timeframe Reliability</div>
-                   <div className={`text-3xl font-extralight ${staff.reliability >= 80 ? 'text-emerald-400' : staff.reliability >= 50 ? 'text-amber-400' : 'text-red-400'}`}>{staff.reliability}%</div>
-                 </div>
-
-                 <div className="space-y-4 font-mono text-sm">
-                   <div className="flex justify-between items-center border-b border-white/5 pb-2"><span className="text-zinc-500 text-xs">In-Game</span><span className="text-emerald-400 font-bold">{staff.ig}</span></div>
-                   {staff.rank === 'Senior Support' && (
-                     <div className="flex justify-between items-center border-b border-white/5 pb-2"><span className="text-zinc-500 text-xs">Forum</span><span className="text-amber-400 font-bold">{staff.forum}</span></div>
-                   )}
-                   <div className="flex justify-between items-center"><span className="text-zinc-500 text-xs">Discord</span><span className="text-indigo-400 font-bold">{staff.discord}</span></div>
-                 </div>
-               </div>
-             ))}
+           <div className="bg-black/30 border border-white/5 rounded-3xl p-2 sm:p-6 shadow-inner overflow-hidden">
+             <div className="overflow-x-auto custom-scrollbar">
+               <table className="w-full text-left border-collapse min-w-[800px]">
+                 <thead>
+                   <tr className="border-b border-white/10 text-[10px] uppercase tracking-widest text-zinc-500 font-black">
+                     <th className="p-4 pl-6">Personnel</th>
+                     <th className="p-4 text-center">In-Game</th>
+                     <th className="p-4 text-center">Forum</th>
+                     <th className="p-4 text-center">Discord</th>
+                     <th className="p-4 text-center">Reliability</th>
+                     <th className="p-4 pr-6 text-right">Action</th>
+                   </tr>
+                 </thead>
+                 <tbody className="text-sm">
+                   {comparisonData.map((staff, i) => (
+                     <tr key={i} className="border-b border-white/[0.02] hover:bg-white/[0.02] transition-colors group">
+                       <td className="p-4 pl-6 flex flex-col justify-center">
+                         <div className="font-light tracking-tight text-white text-base">{staff.name}</div>
+                         <div className={`inline-block px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest mt-1 w-max ${staff.rank === 'Senior Support' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-white/5 text-zinc-400'}`}>{staff.rank}</div>
+                       </td>
+                       <td className="p-4 text-center font-mono text-emerald-400 font-bold">{staff.ig}</td>
+                       <td className="p-4 text-center font-mono text-amber-400 font-bold">{staff.rank === 'Senior Support' ? staff.forum : '-'}</td>
+                       <td className="p-4 text-center font-mono text-indigo-400 font-bold">{staff.discord}</td>
+                       <td className="p-4 text-center">
+                         <div className={`inline-flex items-center justify-center px-3 py-1 rounded-lg text-xs font-black ${staff.reliability >= 80 ? 'bg-emerald-500/10 text-emerald-400' : staff.reliability >= 50 ? 'bg-amber-500/10 text-amber-400' : 'bg-red-500/10 text-red-400'}`}>
+                           {staff.reliability}%
+                         </div>
+                       </td>
+                       <td className="p-4 pr-6 text-right">
+                         <button onClick={() => toggleCompare(staff.name)} className="text-zinc-600 hover:text-red-400 transition-colors font-bold text-lg opacity-0 group-hover:opacity-100">✕</button>
+                       </td>
+                     </tr>
+                   ))}
+                 </tbody>
+               </table>
+             </div>
            </div>
          ) : (
            <div className="text-center py-16 text-zinc-600 font-bold uppercase tracking-widest text-xs italic opacity-50">Select staff from the dropdown above to begin comparison</div>
