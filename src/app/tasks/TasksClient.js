@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { manageTask, pingDiscordTask } from '../actions';
 
-export default function TasksClient({ initialTasks, ssmNames }) {
+export default function TasksClient({ initialTasks, ssmNames, activeRosterNames }) {
   const [viewMode, setViewMode] = useState('Pending');
   const [openDropdown, setOpenDropdown] = useState(null);
   
@@ -10,27 +10,54 @@ export default function TasksClient({ initialTasks, ssmNames }) {
   const [editModal, setEditModal] = useState({ isOpen: false, id: "", title: "", description: "", target: "" });
   const [processing, setProcessing] = useState(null);
 
-  const [newTask, setNewTask] = useState({ title: "", description: "", target: "SSM" });
+  // New Batch-Creation State
+  const [newTask, setNewTask] = useState({ 
+    type: "General", 
+    customTitle: "", 
+    description: "", 
+    target: "SSM", 
+    staffInvolved: [] 
+  });
 
   const displayedTasks = initialTasks.filter(t => t.status === viewMode);
 
+  const toggleStaffSelection = (name) => {
+    setNewTask(prev => ({
+       ...prev,
+       staffInvolved: prev.staffInvolved.includes(name) 
+           ? prev.staffInvolved.filter(n => n !== name) 
+           : [...prev.staffInvolved, name]
+    }));
+  };
+
   const handleCreateTask = async () => {
-    if (!newTask.title.trim()) return;
+    if (newTask.type === "General" && !newTask.customTitle.trim()) return;
     setProcessing('creating');
     
-    const taskObj = {
-      id: Date.now().toString(),
-      title: newTask.title,
-      description: newTask.description,
-      target: newTask.target
-    };
+    let tasksArray = [];
 
-    await manageTask({ action: 'AddBatch', tasksArray: [taskObj] });
-    await pingDiscordTask({ tasksArray: [taskObj], targetPings: newTask.target });
+    if (newTask.type === "General" || newTask.staffInvolved.length === 0) {
+        tasksArray = [{
+            id: Date.now().toString(),
+            title: newTask.type === 'General' ? newTask.customTitle : newTask.type,
+            description: newTask.description,
+            target: newTask.target
+        }];
+    } else {
+        tasksArray = newTask.staffInvolved.map((staffName, index) => ({
+            id: (Date.now() + index).toString(),
+            title: `${newTask.type} - ${staffName}`,
+            description: newTask.description,
+            target: newTask.target
+        }));
+    }
+
+    await manageTask({ action: 'AddBatch', tasksArray });
+    await pingDiscordTask({ tasksArray, targetPings: newTask.target });
     
     setProcessing(null);
     setIsAddModalOpen(false);
-    setNewTask({ title: "", description: "", target: "SSM" });
+    setNewTask({ type: "General", customTitle: "", description: "", target: "SSM", staffInvolved: [] });
   };
 
   const handleEditTask = async () => {
@@ -61,7 +88,7 @@ export default function TasksClient({ initialTasks, ssmNames }) {
         <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] bg-indigo-500/10 rounded-full blur-[120px] animate-pulse" />
       </div>
 
-      <header style={{ zIndex: 100 }} className="bg-zinc-900/80 backdrop-blur-3xl border border-white/10 rounded-3xl p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between shadow-[0_0_40px_rgba(0,0,0,0.5)] relative group gap-6">
+      <header className="relative z-[100] bg-zinc-900/80 backdrop-blur-3xl border border-white/10 rounded-3xl p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between shadow-[0_0_40px_rgba(0,0,0,0.5)] group gap-6">
         <div className="relative z-10 flex flex-col sm:flex-row gap-6 w-full md:w-auto">
           <div>
             <h1 className="text-3xl font-light text-white tracking-tight drop-shadow-[0_0_10px_rgba(255,255,255,0.1)]">Task Workspace</h1>
@@ -128,33 +155,67 @@ export default function TasksClient({ initialTasks, ssmNames }) {
 
       {isAddModalOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-md p-4" onClick={() => setOpenDropdown(null)}>
-          <div className="bg-zinc-900/90 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 w-full max-w-md shadow-[0_0_60px_rgba(0,0,0,0.8)] relative overflow-visible">
+          <div className="bg-zinc-900/90 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 w-full max-w-xl shadow-[0_0_60px_rgba(0,0,0,0.8)] relative flex flex-col max-h-[90vh]">
             <div className="absolute -top-40 -left-40 w-96 h-96 bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none transition-all duration-700" />
-            <div className="relative z-10">
-              <h3 className="text-3xl font-light text-white mb-8 tracking-tight">Create Task</h3>
-              <div className="space-y-5 mb-8">
-                
-                <div className="relative" onClick={(e) => e.stopPropagation()}>
-                  <label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 block font-bold">Target (Ping)</label>
-                  <div onClick={() => setOpenDropdown(openDropdown === 'taskTarget' ? null : 'taskTarget')} className="w-full p-4 rounded-2xl bg-black/40 border border-white/5 text-white text-sm cursor-pointer shadow-inner flex items-center justify-between transition-all hover:border-indigo-500">
-                    <span>{newTask.target}</span><span className="text-[9px] text-zinc-500">▼</span>
-                  </div>
-                  {openDropdown === 'taskTarget' && (
-                    <div className="absolute top-full left-0 mt-2 w-full bg-zinc-800 border border-zinc-600 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden max-h-48 overflow-y-auto custom-scrollbar">
-                      <div onClick={() => { setNewTask({...newTask, target: 'SSM'}); setOpenDropdown(null); }} className={`px-5 py-3 text-sm font-bold cursor-pointer transition-colors ${newTask.target === 'SSM' ? 'bg-indigo-500/20 text-white' : 'text-zinc-400 hover:bg-white/10 hover:text-white'}`}>SSM</div>
-                      {ssmNames.map(name => (
-                        <div key={name} onClick={() => { setNewTask({...newTask, target: name}); setOpenDropdown(null); }} className={`px-5 py-3 text-sm font-bold cursor-pointer transition-colors ${newTask.target === name ? 'bg-indigo-500/20 text-white' : 'text-zinc-400 hover:bg-white/10 hover:text-white'}`}>{name}</div>
-                      ))}
+            <div className="relative z-10 flex flex-col h-full">
+              <h3 className="text-3xl font-light text-white mb-6 tracking-tight flex-shrink-0">Create Task Batch</h3>
+              
+              <div className="flex-1 overflow-y-auto custom-scrollbar pr-4 space-y-6 mb-8">
+                  <div className="relative" onClick={(e) => e.stopPropagation()}>
+                    <label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 block font-bold">Target (Who gets pinged?)</label>
+                    <div onClick={() => setOpenDropdown(openDropdown === 'taskTarget' ? null : 'taskTarget')} className="w-full p-4 rounded-2xl bg-black/40 border border-white/5 text-white text-sm cursor-pointer shadow-inner flex items-center justify-between transition-all hover:border-indigo-500">
+                      <span>{newTask.target}</span><span className="text-[9px] text-zinc-500">▼</span>
                     </div>
-                  )}
-                </div>
+                    {openDropdown === 'taskTarget' && (
+                      <div className="absolute top-full left-0 mt-2 w-full bg-zinc-800 border border-zinc-600 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden max-h-48 overflow-y-auto custom-scrollbar">
+                        <div onClick={() => { setNewTask({...newTask, target: 'SSM'}); setOpenDropdown(null); }} className={`px-5 py-3 text-sm font-bold cursor-pointer transition-colors ${newTask.target === 'SSM' ? 'bg-indigo-500/20 text-white' : 'text-zinc-400 hover:bg-white/10 hover:text-white'}`}>SSM</div>
+                        {ssmNames.map(name => (
+                          <div key={name} onClick={() => { setNewTask({...newTask, target: name}); setOpenDropdown(null); }} className={`px-5 py-3 text-sm font-bold cursor-pointer transition-colors ${newTask.target === name ? 'bg-indigo-500/20 text-white' : 'text-zinc-400 hover:bg-white/10 hover:text-white'}`}>{name}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
 
-                <div><label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 block font-bold">Task Title</label><input type="text" className="w-full p-4 rounded-2xl bg-black/40 border border-white/5 text-white outline-none focus:border-indigo-500 transition-all shadow-inner text-sm" value={newTask.title} onChange={(e) => setNewTask({...newTask, title: e.target.value})} placeholder="Action required..." /></div>
-                <div><label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 block font-bold">Description</label><textarea className="w-full h-32 p-4 rounded-2xl bg-black/40 border border-white/5 text-white outline-none focus:border-indigo-500 transition-all shadow-inner text-sm custom-scrollbar" value={newTask.description} onChange={(e) => setNewTask({...newTask, description: e.target.value})} placeholder="Additional details..." /></div>
+                  <div className="relative" onClick={(e) => e.stopPropagation()}>
+                    <label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 block font-bold">Task Type</label>
+                    <div onClick={() => setOpenDropdown(openDropdown === 'taskType' ? null : 'taskType')} className="w-full p-4 rounded-2xl bg-black/40 border border-white/5 text-white text-sm cursor-pointer shadow-inner flex items-center justify-between transition-all hover:border-indigo-500">
+                      <span>{newTask.type}</span><span className="text-[9px] text-zinc-500">▼</span>
+                    </div>
+                    {openDropdown === 'taskType' && (
+                      <div className="absolute top-full left-0 mt-2 w-full bg-zinc-800 border border-zinc-600 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden">
+                        {['General', 'Spoken To', 'Issue Strike'].map(t => (
+                          <div key={t} onClick={() => { setNewTask({...newTask, type: t}); setOpenDropdown(null); }} className={`px-5 py-3 text-sm font-bold cursor-pointer transition-colors ${newTask.type === t ? 'bg-indigo-500/20 text-white' : 'text-zinc-400 hover:bg-white/10 hover:text-white'}`}>{t}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {newTask.type === 'General' && (
+                     <div><label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 block font-bold">Custom Title</label><input type="text" className="w-full p-4 rounded-2xl bg-black/40 border border-white/5 text-white outline-none focus:border-indigo-500 transition-all shadow-inner text-sm" value={newTask.customTitle} onChange={(e) => setNewTask({...newTask, customTitle: e.target.value})} placeholder="Action required..." /></div>
+                  )}
+
+                  {(newTask.type === 'Spoken To' || newTask.type === 'Issue Strike') && (
+                     <div className="bg-white/[0.02] border border-white/5 p-5 rounded-3xl">
+                        <label className="text-[10px] text-indigo-400 uppercase tracking-widest mb-4 block font-black">Staff Involved (Checklist)</label>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                           {activeRosterNames.map(name => {
+                              const isSelected = newTask.staffInvolved.includes(name);
+                              return (
+                                 <div key={name} onClick={() => toggleStaffSelection(name)} className={`px-3 py-2 text-xs font-bold rounded-xl cursor-pointer border transition-colors flex items-center justify-center text-center ${isSelected ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-300' : 'bg-black/30 border-white/5 text-zinc-400 hover:border-white/20'}`}>
+                                    {name}
+                                 </div>
+                              );
+                           })}
+                        </div>
+                     </div>
+                  )}
+
+                  <div><label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 block font-bold">Description (Optional)</label><textarea className="w-full h-32 p-4 rounded-2xl bg-black/40 border border-white/5 text-white outline-none focus:border-indigo-500 transition-all shadow-inner text-sm custom-scrollbar" value={newTask.description} onChange={(e) => setNewTask({...newTask, description: e.target.value})} placeholder="Additional details..." /></div>
               </div>
-              <div className="flex gap-4">
+
+              <div className="flex gap-4 flex-shrink-0 pt-4 border-t border-white/5">
                 <button onClick={() => setIsAddModalOpen(false)} className="flex-1 text-zinc-500 font-bold uppercase text-xs hover:text-white transition-colors">Cancel</button>
-                <button disabled={processing === 'creating'} onClick={handleCreateTask} className="flex-1 py-4 bg-indigo-600/80 hover:bg-indigo-500 backdrop-blur-md border border-indigo-400/50 rounded-xl font-bold text-white uppercase text-xs transition-all shadow-[0_0_20px_rgba(79,70,229,0.4)]">{processing === 'creating' ? 'Deploying...' : 'Deploy Task'}</button>
+                <button disabled={processing === 'creating'} onClick={handleCreateTask} className="flex-1 py-4 bg-indigo-600/80 hover:bg-indigo-500 backdrop-blur-md border border-indigo-400/50 rounded-xl font-bold text-white uppercase text-xs transition-all shadow-[0_0_20px_rgba(79,70,229,0.4)]">{processing === 'creating' ? 'Deploying...' : 'Deploy Task Batch'}</button>
               </div>
             </div>
           </div>
