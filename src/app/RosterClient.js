@@ -14,6 +14,44 @@ const parseSafeDate = (dateStr) => {
   return 0; 
 };
 
+const calculateLoaDays = (monthStr, loas) => {
+  if (!loas || !monthStr) return 0;
+  const parts = monthStr.split('/');
+  if (parts.length !== 3) return 0;
+  
+  let mYear = parseInt(parts[2], 10);
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  let mMonth = months.indexOf(parts[1]);
+  if (mMonth === -1) return 0;
+
+  mMonth = mMonth - 1;
+  if (mMonth < 0) {
+      mMonth = 11;
+      mYear -= 1;
+  }
+
+  const monthStart = new Date(mYear, mMonth, 1);
+  const monthEnd = new Date(mYear, mMonth + 1, 0);
+
+  let days = 0;
+  loas.forEach(loa => {
+     const sParts = String(loa.startDate).split('-');
+     const eParts = String(loa.endDate).split('-');
+     if(sParts.length !== 3 || eParts.length !== 3) return;
+
+     const s = new Date(sParts[0], sParts[1]-1, sParts[2]);
+     const e = new Date(eParts[0], eParts[1]-1, eParts[2]);
+
+     const overlapStart = s > monthStart ? s : monthStart;
+     const overlapEnd = e < monthEnd ? e : monthEnd;
+     
+     if (overlapStart <= overlapEnd) {
+        days += Math.round((overlapEnd - overlapStart) / (1000 * 60 * 60 * 24)) + 1;
+     }
+  });
+  return days;
+};
+
 export default function RosterClient({ initialData, managementData }) {
   const [viewMode, setViewMode] = useState('Active'); 
   const [roleFilter, setRoleFilter] = useState("All"); 
@@ -53,19 +91,19 @@ export default function RosterClient({ initialData, managementData }) {
     });
 
     (selectedStaffStats.spokenToLogs || []).forEach((log, i) => {
-        let isException = log.note.startsWith('METRIC EXCEPTION');
+        let isException = String(log.note || '').startsWith('METRIC EXCEPTION');
         events.push({ 
             id: `log-${i}-${log.timestamp}`, 
             type: 'spoken_to', 
             dateStr: log.timestamp, 
             dateObj: parseSafeDate(log.timestamp), 
             action: isException ? 'METRIC EXCEPTION' : 'Spoken To', 
-            note: isException ? log.note.replace(/METRIC EXCEPTION \(.*?\): |METRIC EXCEPTION: /, '').trim() : log.note 
+            note: isException ? String(log.note || '').replace(/METRIC EXCEPTION \(.*?\): |METRIC EXCEPTION: /, '').trim() : log.note 
         });
     });
 
     (selectedStaffStats.lifecycle || []).forEach((l, i) => {
-        if (l.action.includes('Spoken To Log') || l.action.includes('METRIC EXCEPTION')) return; 
+        if (String(l.action || '').includes('Spoken To Log') || String(l.action || '').includes('METRIC EXCEPTION')) return; 
         events.push({ id: `lc-${i}-${l.date}`, type: 'event', dateStr: l.date, dateObj: parseSafeDate(l.date), action: l.action });
     });
 
@@ -184,8 +222,8 @@ export default function RosterClient({ initialData, managementData }) {
             .map(h => ({ date: h.month, action: 'Strike Issued' }));
 
           const cardLifecycle = staff.isManagement ? [] : [
-            ...(staff.lifecycle || []).filter(l => !l.action.includes('Spoken To Log') && !l.action.includes('METRIC EXCEPTION')), 
-            ...(staff.spokenToLogs || []).map(log => ({ date: log.timestamp, action: log.note.startsWith('METRIC EXCEPTION') ? 'METRIC EXCEPTION' : 'Spoken To Log' })),
+            ...(staff.lifecycle || []).filter(l => !String(l.action || '').includes('Spoken To Log') && !String(l.action || '').includes('METRIC EXCEPTION')), 
+            ...(staff.spokenToLogs || []).map(log => ({ date: log.timestamp, action: String(log.note || '').startsWith('METRIC EXCEPTION') ? 'METRIC EXCEPTION' : 'Spoken To Log' })),
             ...strikesForCard
           ].sort((a, b) => parseSafeDate(b.date) - parseSafeDate(a.date));
 
@@ -272,7 +310,7 @@ export default function RosterClient({ initialData, managementData }) {
                           {cardLifecycle.length > 0 ? cardLifecycle.map((event, idx) => (
                             <div key={idx} className="flex flex-col gap-1">
                               <span className="text-[10px] text-zinc-500 font-mono tracking-widest">{event.date}</span>
-                              <span className={`text-[10px] uppercase font-bold tracking-wider ${event.action.includes('METRIC EXCEPTION') || event.action.includes('Spoken To Log') ? 'text-fuchsia-400' : event.action.includes('Strike') || event.action.includes('REMOVED') ? 'text-red-400' : event.action.includes('Promote') || event.action.includes('Reinstate') ? 'text-emerald-400' : 'text-zinc-300'}`}>{event.action}</span>
+                              <span className={`text-[10px] uppercase font-bold tracking-wider ${String(event.action || '').includes('METRIC EXCEPTION') || String(event.action || '').includes('Spoken To Log') ? 'text-fuchsia-400' : String(event.action || '').includes('Strike') || String(event.action || '').includes('REMOVED') ? 'text-red-400' : String(event.action || '').includes('Promote') || String(event.action || '').includes('Reinstate') ? 'text-emerald-400' : 'text-zinc-300'}`}>{event.action}</span>
                             </div>
                           )) : <div className="text-xs text-zinc-600 italic text-center mt-6">No logged events</div>}
                         </div>
@@ -300,7 +338,7 @@ export default function RosterClient({ initialData, managementData }) {
               <div className="space-y-6">
                 {timelineEvents.map((ev) => (
                   <div key={ev.id} className="relative pl-8 flex items-start">
-                    <div className={`absolute left-0 top-2.5 w-5 h-5 rounded-full border-[3px] border-zinc-900 shadow-md ${ev.type === 'stats' ? 'bg-indigo-500' : ev.type === 'strike' ? 'bg-red-500' : ev.type === 'spoken_to' ? 'bg-fuchsia-500' : ev.action?.includes('REMOVED') ? 'bg-red-500' : ev.action?.includes('Promote') || ev.action?.includes('Reinstate') ? 'bg-emerald-500' : 'bg-zinc-500'}`} />
+                    <div className={`absolute left-0 top-2.5 w-5 h-5 rounded-full border-[3px] border-zinc-900 shadow-md ${ev.type === 'stats' ? 'bg-indigo-500' : ev.type === 'strike' ? 'bg-red-500' : ev.type === 'spoken_to' ? 'bg-fuchsia-500' : String(ev.action || '').includes('REMOVED') ? 'bg-red-500' : String(ev.action || '').includes('Promote') || String(ev.action || '').includes('Reinstate') ? 'bg-emerald-500' : 'bg-zinc-500'}`} />
                     <div className="flex-1 bg-white/[0.02] backdrop-blur-md border border-white/5 rounded-2xl p-5 hover:border-white/20 transition-all shadow-lg relative overflow-hidden group hover:bg-white/[0.04]">
                       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative z-10">
                         <div className="text-[10px] text-zinc-500 font-mono font-bold whitespace-nowrap w-24">{ev.dateStr}</div>
@@ -335,10 +373,10 @@ export default function RosterClient({ initialData, managementData }) {
                             );
                           })()}
                           {ev.type === 'strike' && (<div className="text-xs font-black text-red-400 uppercase tracking-widest">Strike Issued</div>)}
-                          {ev.type === 'event' && (<div className={`text-xs font-black uppercase tracking-widest ${ev.action.includes('REMOVED') ? 'text-red-400' : ev.action.includes('Promote') || ev.action.includes('Reinstate') ? 'text-emerald-400' : 'text-zinc-200'}`}>{ev.action}</div>)}
+                          {ev.type === 'event' && (<div className={`text-xs font-black uppercase tracking-widest ${String(ev.action || '').includes('REMOVED') ? 'text-red-400' : String(ev.action || '').includes('Promote') || String(ev.action || '').includes('Reinstate') ? 'text-emerald-400' : 'text-zinc-200'}`}>{ev.action}</div>)}
                           {ev.type === 'spoken_to' && (
                             <div>
-                              <div className="text-[10px] font-black text-fuchsia-400 uppercase tracking-widest mb-2">{ev.action.includes('METRIC') ? 'Metric Exception' : 'Spoken To'}</div>
+                              <div className="text-[10px] font-black text-fuchsia-400 uppercase tracking-widest mb-2">{String(ev.action || '').includes('METRIC') ? 'Metric Exception' : 'Spoken To'}</div>
                               {ev.note && <div className="text-[11px] text-zinc-300 leading-relaxed bg-black/40 p-3 rounded-xl border border-white/5">{ev.note}</div>}
                             </div>
                           )}
@@ -423,8 +461,8 @@ export default function RosterClient({ initialData, managementData }) {
       )}
 
       {editModal.isOpen && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-md p-4">
-          <div className="bg-zinc-900/90 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 w-full max-w-md shadow-[0_0_60px_rgba(0,0,0,0.8)] relative overflow-hidden">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-md p-4" onClick={() => setOpenDropdown(null)}>
+          <div className="bg-zinc-900/90 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 w-full max-w-md shadow-[0_0_60px_rgba(0,0,0,0.8)] relative overflow-visible" onClick={e => e.stopPropagation()}>
             <div className="absolute -top-40 -left-40 w-96 h-96 bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none transition-all duration-700" />
             <div className="relative z-10">
               <h3 className="text-2xl font-light text-white mb-8 tracking-tight">Edit Profile: {editModal.oldName}</h3>
@@ -443,8 +481,8 @@ export default function RosterClient({ initialData, managementData }) {
       )}
 
       {createLogModal.isOpen && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-md p-4">
-          <div className="bg-zinc-900/90 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 w-full max-w-lg shadow-[0_0_60px_rgba(0,0,0,0.8)] relative overflow-hidden">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-md p-4" onClick={() => setOpenDropdown(null)}>
+          <div className="bg-zinc-900/90 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 w-full max-w-lg shadow-[0_0_60px_rgba(0,0,0,0.8)] relative overflow-visible" onClick={e => e.stopPropagation()}>
             <div className="absolute -top-40 -left-40 w-96 h-96 bg-fuchsia-500/10 rounded-full blur-[100px] pointer-events-none transition-all duration-700" />
             <div className="relative z-10">
               <h3 className="text-2xl font-light text-white mb-2 tracking-tight">Log Spoken To: {createLogModal.name}</h3>
@@ -458,6 +496,95 @@ export default function RosterClient({ initialData, managementData }) {
           </div>
         </div>
       )}
+
+      {isAddModalOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-md p-4" onClick={() => setOpenDropdown(null)}>
+          <div className="bg-zinc-900/90 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 w-full max-w-md shadow-[0_0_60px_rgba(0,0,0,0.8)] overflow-y-auto max-h-[90vh] relative" onClick={e => e.stopPropagation()}>
+            <div className="absolute -top-40 -left-40 w-96 h-96 bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none transition-all duration-700" />
+            <div className="relative z-10">
+              <h3 className="text-3xl font-light text-white mb-8 tracking-tight">Add Personnel</h3>
+              <div className="space-y-5 mb-8">
+                <div><label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 block font-bold">Full Name</label><input type="text" className="w-full p-4 rounded-2xl bg-black/40 border border-white/5 text-white outline-none focus:border-indigo-500 transition-all shadow-inner text-sm" onChange={(e) => setFormState({...formState, name: e.target.value})} /></div>
+                {viewMode !== 'Management' && (
+                  <div className="relative" onClick={(e) => e.stopPropagation()}>
+                    <label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 block font-bold">Initial Rank</label>
+                    <div onClick={() => setOpenDropdown(openDropdown === 'addRole' ? null : 'addRole')} className={`w-full p-4 rounded-2xl bg-black/40 border text-white text-sm cursor-pointer shadow-inner flex items-center justify-between transition-all ${openDropdown === 'addRole' ? 'border-indigo-500' : 'border-white/5 hover:border-white/10'}`}>
+                      <span>{formState.role}</span><span className="text-[9px] text-zinc-500">▼</span>
+                    </div>
+                    {openDropdown === 'addRole' && (
+                      <div className="absolute top-full left-0 mt-2 w-full bg-zinc-800 border border-zinc-600 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden">
+                        {['Support', 'Senior Support'].map(role => (
+                          <div key={role} onClick={() => { setFormState({...formState, role}); setOpenDropdown(null); }} className={`px-5 py-3 text-sm font-bold cursor-pointer transition-colors ${formState.role === role ? 'bg-indigo-500/20 text-white' : 'text-zinc-400 hover:bg-white/10 hover:text-white'}`}>{role}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div><label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 block font-bold">Discord ID</label><input type="text" className="w-full p-4 rounded-2xl bg-black/40 border border-white/5 text-white outline-none focus:border-indigo-500 transition-all shadow-inner text-sm" onChange={(e) => setFormState({...formState, discordId: e.target.value})} /></div>
+                <div><label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 block font-bold">Forum Link (Optional)</label><input type="text" className="w-full p-4 rounded-2xl bg-black/40 border border-white/5 text-white outline-none focus:border-indigo-500 transition-all shadow-inner text-sm" onChange={(e) => setFormState({...formState, forumLink: e.target.value})} /></div>
+              </div>
+              <div className="flex gap-4">
+                <button onClick={() => setIsAddModalOpen(false)} className="flex-1 text-zinc-500 font-bold uppercase text-xs hover:text-white transition-colors">Cancel</button>
+                <button disabled={processing === 'adding'} onClick={handleAddStaff} className="flex-1 py-4 bg-indigo-600/80 hover:bg-indigo-500 backdrop-blur-md border border-indigo-400/50 rounded-xl font-bold text-white uppercase text-xs transition-all shadow-[0_0_20px_rgba(79,70,229,0.4)]">{processing === 'adding' ? 'Deploying...' : 'Deploy'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reinstateModal.isOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-md p-4" onClick={() => setOpenDropdown(null)}>
+          <div className="bg-zinc-900/90 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 w-full max-w-sm shadow-[0_0_60px_rgba(0,0,0,0.8)] relative overflow-visible" onClick={e => e.stopPropagation()}>
+            <div className="absolute -top-40 -left-40 w-96 h-96 bg-emerald-500/10 rounded-full blur-[100px] pointer-events-none transition-all duration-700" />
+            <div className="relative z-10">
+              <h3 className="text-3xl font-light text-white mb-6 tracking-tight">Reinstate</h3>
+              <div className="relative mb-8" onClick={(e) => e.stopPropagation()}>
+                  <div onClick={() => setOpenDropdown(openDropdown === 'reinstateRole' ? null : 'reinstateRole')} className={`w-full p-4 rounded-2xl bg-black/40 border text-white text-sm cursor-pointer shadow-inner flex items-center justify-between transition-all ${openDropdown === 'reinstateRole' ? 'border-emerald-500' : 'border-white/5 hover:border-white/10'}`}>
+                    <span>{reinstateModal.role}</span><span className="text-[9px] text-zinc-500">▼</span>
+                  </div>
+                  {openDropdown === 'reinstateRole' && (
+                    <div className="absolute top-full left-0 mt-2 w-full bg-zinc-800 border border-zinc-600 rounded-2xl shadow-2xl z-50 py-2 overflow-hidden">
+                      {['Support', 'Senior Support'].map(role => (
+                        <div key={role} onClick={() => { setReinstateModal({...reinstateModal, role}); setOpenDropdown(null); }} className={`px-5 py-3 text-sm font-bold cursor-pointer transition-colors ${reinstateModal.role === role ? 'bg-emerald-500/20 text-emerald-400' : 'text-zinc-400 hover:bg-white/10 hover:text-white'}`}>{role}</div>
+                      ))}
+                    </div>
+                  )}
+              </div>
+              <div className="flex gap-4">
+                <button onClick={() => setReinstateModal({isOpen: false, name: "", role: "Support"})} className="flex-1 text-zinc-500 font-bold uppercase text-xs hover:text-white transition-colors">Cancel</button>
+                <button disabled={processing === 'reinstate'} onClick={handleReinstate} className="flex-1 py-4 bg-emerald-600/80 hover:bg-emerald-500 backdrop-blur-md border border-emerald-400/50 rounded-xl font-bold text-white uppercase text-xs shadow-[0_0_20px_rgba(16,185,129,0.4)] transition-all">{processing === 'reinstate' ? 'Updating...' : 'Reinstate'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {viewLogsModal.isOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-md p-4" onClick={() => setViewLogsModal({ isOpen: false, name: "", logs: [] })}>
+          <div className="bg-zinc-900/90 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 w-full max-w-2xl shadow-[0_0_60px_rgba(0,0,0,0.8)] relative overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="absolute -top-40 -left-40 w-96 h-96 bg-fuchsia-500/10 rounded-full blur-[100px] pointer-events-none transition-all duration-700" />
+            <div className="relative z-10">
+              <h3 className="text-3xl font-light text-white mb-2 tracking-tight">{viewLogsModal.name}</h3>
+              <p className="text-xs text-zinc-400 mb-8 uppercase tracking-widest font-bold">Feedback & Disciplinary Logs</p>
+              <div className="max-h-96 overflow-y-auto custom-scrollbar pr-2 space-y-4">
+                {viewLogsModal.logs.map((log, i) => {
+                  const isException = String(log.note || '').startsWith('METRIC EXCEPTION');
+                  return (
+                    <div key={i} className="bg-white/[0.03] backdrop-blur-md border border-white/10 p-5 rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.3)] hover:border-fuchsia-500/30 transition-all relative overflow-hidden group">
+                      <div className="absolute -right-10 -bottom-10 w-32 h-32 bg-fuchsia-500/10 rounded-full blur-3xl pointer-events-none transition-all group-hover:bg-fuchsia-500/20" />
+                      <div className="text-[10px] text-fuchsia-400 font-mono mb-3 font-bold relative z-10">{log.timestamp}</div>
+                      <div className="text-[10px] uppercase font-black text-fuchsia-300 mb-1">{isException ? 'METRIC EXCEPTION' : 'Spoken To'}</div>
+                      <p className="text-sm text-zinc-200 whitespace-pre-wrap leading-relaxed relative z-10">{isException ? String(log.note || '').replace(/METRIC EXCEPTION \(.*?\): |METRIC EXCEPTION: /, '').trim() : log.note}</p>
+                    </div>
+                  );
+                })}
+              </div>
+              <button onClick={() => setViewLogsModal({ isOpen: false, name: "", logs: [] })} className="mt-8 w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl font-bold text-white uppercase text-xs transition-all shadow-md">Close Window</button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
