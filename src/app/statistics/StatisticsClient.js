@@ -40,25 +40,31 @@ function TimeFilter({ mode, setMode, month, setMonth, range, setRange, available
 
 const calculateLoaDays = (monthStr, loas) => {
   if (!loas || !monthStr) return 0;
-  const targetDate = new Date(monthStr.replace(/\//g, ' '));
-  if (isNaN(targetDate)) return 0;
+  const parts = monthStr.split('/');
+  if (parts.length !== 3) return 0;
   
-  const mYear = targetDate.getFullYear();
-  const mMonth = targetDate.getMonth();
+  const mYear = parseInt(parts[2], 10);
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const mMonth = months.indexOf(parts[1]);
+  if (mMonth === -1) return 0;
+
   const monthStart = new Date(mYear, mMonth, 1);
   const monthEnd = new Date(mYear, mMonth + 1, 0);
 
   let days = 0;
   loas.forEach(loa => {
-     const s = new Date(loa.startDate);
-     const e = new Date(loa.endDate);
-     if (isNaN(s) || isNaN(e)) return;
-     
+     const sParts = String(loa.startDate).split('-');
+     const eParts = String(loa.endDate).split('-');
+     if(sParts.length !== 3 || eParts.length !== 3) return;
+
+     const s = new Date(sParts[0], sParts[1]-1, sParts[2]);
+     const e = new Date(eParts[0], eParts[1]-1, eParts[2]);
+
      const overlapStart = s > monthStart ? s : monthStart;
      const overlapEnd = e < monthEnd ? e : monthEnd;
      
      if (overlapStart <= overlapEnd) {
-        days += Math.ceil((overlapEnd - overlapStart) / (1000 * 60 * 60 * 24)) + 1;
+        days += Math.round((overlapEnd - overlapStart) / (1000 * 60 * 60 * 24)) + 1;
      }
   });
   return days;
@@ -90,7 +96,6 @@ export default function StatisticsClient({ initialData }) {
     });
   }, [initialData]);
 
-  // STRICTLY active staff for the Comparison Dropdowns
   const activeStaffOptions = useMemo(() => {
     return [...initialData].filter(s => s.isActive).sort((a, b) => a.name.localeCompare(b.name));
   }, [initialData]);
@@ -121,27 +126,30 @@ export default function StatisticsClient({ initialData }) {
        const dynamicLoaDays = calculateLoaDays(mostRecentMonth, s.loas);
        const igTarget = Math.max(0, 30 - dynamicLoaDays);
        const igGraceTarget = Math.max(0, igTarget - 5);
+       
        const isSenior = s.rank === 'Senior Support';
        const forumTarget = isSenior ? 5 : 0;
 
        const missedIG = h.newIG < igGraceTarget;
-       const metForum = isSenior ? h.newForum >= forumTarget : true;
+       const missedForum = isSenior && h.newForum < forumTarget;
        
-       if (!missedIG && metForum) return null; 
+       // If they passed both IG (Target or Grace) AND Forum, hide them.
+       if (!missedIG && !missedForum) return null; 
        if (h.strike > 0) return null; 
        
        const hasException = s.spokenToLogs?.some(log => log.note.includes(`METRIC EXCEPTION (${monthStr})`));
        if (hasException) return null; 
 
-       const onlyForumMissed = !missedIG && !metForum;
+       const onlyForumMissed = !missedIG && missedForum;
 
-       return { ...s, monthData: h, igTarget, forumTarget, isSenior, onlyForumMissed, missedIG };
+       return { ...s, monthData: h, igTarget, forumTarget, isSenior, onlyForumMissed, missedIG, missedForum };
     }).filter(Boolean);
   }, [activeStaff, mostRecentMonth, dismissedEvaluations]);
 
-  const handleConfirmStrike = async (staffName) => {
+  const handleConfirmStrike = async (staffName, type) => {
     setProcessing(`strike-${staffName}`);
-    await manageTask({ action: 'AddBatch', tasksArray: [{ id: Date.now().toString(), title: `Issue Strike - ${staffName}`, description: `Missed Metric Quota for ${mostRecentMonth}`, target: 'SSM' }] });
+    const desc = type === 'Forum' ? `Missed Forum Quota for ${mostRecentMonth}` : `Missed Metric Quota for ${mostRecentMonth}`;
+    await manageTask({ action: 'AddBatch', tasksArray: [{ id: Date.now().toString(), title: `Issue Strike - ${staffName}`, description: desc, target: 'SSM' }] });
     setDismissedEvaluations(prev => [...prev, staffName]); 
     setProcessing(null);
   };
@@ -275,7 +283,6 @@ export default function StatisticsClient({ initialData }) {
   };
 
   const comparisonData = compareSelected.map(name => comparePerformance.find(s => s.name === name)).filter(Boolean);
-  
   const isAllSupportSelected = activeStaffOptions.filter(s => s.rank === 'Support').length > 0 && activeStaffOptions.filter(s => s.rank === 'Support').every(s => compareSelected.includes(s.name));
   const isAllSeniorSelected = activeStaffOptions.filter(s => s.rank === 'Senior Support').length > 0 && activeStaffOptions.filter(s => s.rank === 'Senior Support').every(s => compareSelected.includes(s.name));
 
@@ -311,11 +318,11 @@ export default function StatisticsClient({ initialData }) {
                   <div className="flex justify-between text-[10px] font-mono text-zinc-400 bg-white/5 p-2 rounded-lg">
                     <span>IG: <span className={s.missedIG ? 'text-red-400 font-bold' : 'text-zinc-400'}>{s.monthData.newIG}</span> / {s.igTarget}</span>
                     {s.isSenior && (
-                      <span>FR: <span className={s.monthData.newForum < s.forumTarget ? 'text-red-400 font-bold' : 'text-zinc-400'}>{s.monthData.newForum}</span> / {s.forumTarget}</span>
+                      <span>FR: <span className={s.missedForum ? 'text-red-400 font-bold' : 'text-zinc-400'}>{s.monthData.newForum}</span> / {s.forumTarget}</span>
                     )}
                   </div>
                   <div className="flex gap-2 mt-1">
-                    <button disabled={processing === `strike-${s.name}`} onClick={() => handleConfirmStrike(s.name)} className="flex-1 py-2 bg-red-600/80 hover:bg-red-500 rounded-lg text-[9px] font-bold text-white uppercase tracking-widest transition-all shadow-md">{processing === `strike-${s.name}` ? '...' : 'Strike Task'}</button>
+                    <button disabled={processing === `strike-${s.name}`} onClick={() => handleConfirmStrike(s.name, s.onlyForumMissed ? 'Forum' : 'Metric')} className="flex-1 py-2 bg-red-600/80 hover:bg-red-500 rounded-lg text-[9px] font-bold text-white uppercase tracking-widest transition-all shadow-md">{processing === `strike-${s.name}` ? '...' : 'Strike Task'}</button>
                     {s.onlyForumMissed ? (
                       <button onClick={() => setDismissedEvaluations(prev => [...prev, s.name])} className="flex-1 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-[9px] font-bold text-zinc-300 uppercase tracking-widest transition-all">Dismiss</button>
                     ) : (
