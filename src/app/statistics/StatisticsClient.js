@@ -38,15 +38,23 @@ function TimeFilter({ mode, setMode, month, setMonth, range, setRange, available
   );
 }
 
+// Strict String-Based LOA Calculator (With 1-Month Backward Shift)
 const calculateLoaDays = (monthStr, loas) => {
   if (!loas || !monthStr) return 0;
   const parts = monthStr.split('/');
   if (parts.length !== 3) return 0;
   
-  const mYear = parseInt(parts[2], 10);
+  let mYear = parseInt(parts[2], 10);
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const mMonth = months.indexOf(parts[1]);
+  let mMonth = months.indexOf(parts[1]);
   if (mMonth === -1) return 0;
+
+  // SHIFT TO PREVIOUS MONTH FOR EVALUATION
+  mMonth = mMonth - 1;
+  if (mMonth < 0) {
+      mMonth = 11;
+      mYear -= 1;
+  }
 
   const monthStart = new Date(mYear, mMonth, 1);
   const monthEnd = new Date(mYear, mMonth + 1, 0);
@@ -133,7 +141,6 @@ export default function StatisticsClient({ initialData }) {
        const missedIG = h.newIG < igGraceTarget;
        const missedForum = isSenior && h.newForum < forumTarget;
        
-       // If they passed both IG (Target or Grace) AND Forum, hide them.
        if (!missedIG && !missedForum) return null; 
        if (h.strike > 0) return null; 
        
@@ -220,7 +227,10 @@ export default function StatisticsClient({ initialData }) {
   }, [initialData, selectedStaffName]);
 
   const comparePerformance = useMemo(() => {
-    return initialData.map(s => {
+    let supportIgSum = 0, supportForumSum = 0, supportDiscordSum = 0, supportMetCount = 0, supportTotalEligible = 0, supportCount = 0;
+    let seniorIgSum = 0, seniorForumSum = 0, seniorDiscordSum = 0, seniorMetCount = 0, seniorTotalEligible = 0, seniorCount = 0;
+
+    const individuals = initialData.map(s => {
       let ig = 0, forum = 0, discord = 0, metCount = 0, totalEligible = 0;
       const isSenior = s.rank === 'Senior Support';
       
@@ -258,9 +268,35 @@ export default function StatisticsClient({ initialData }) {
         });
       }
 
+      if (isSenior) {
+          seniorIgSum += ig; seniorForumSum += forum; seniorDiscordSum += discord; seniorCount++;
+          seniorMetCount += metCount; seniorTotalEligible += totalEligible;
+      } else {
+          supportIgSum += ig; supportForumSum += forum; supportDiscordSum += discord; supportCount++;
+          supportMetCount += metCount; supportTotalEligible += totalEligible;
+      }
+
       const reliability = totalEligible > 0 ? Math.round((metCount / totalEligible) * 100) : 0;
       return { name: s.name, ig, forum, discord, reliability, rank: s.rank };
     });
+
+    individuals.push({
+        name: '[Group] All Support', rank: 'Support', isGroup: true,
+        ig: supportCount ? Math.round(supportIgSum / supportCount) : 0,
+        forum: supportCount ? Math.round(supportForumSum / supportCount) : 0,
+        discord: supportCount ? Math.round(supportDiscordSum / supportCount) : 0,
+        reliability: supportTotalEligible ? Math.round((supportMetCount / supportTotalEligible) * 100) : 0
+    });
+    
+    individuals.push({
+        name: '[Group] All Senior Support', rank: 'Senior Support', isGroup: true,
+        ig: seniorCount ? Math.round(seniorIgSum / seniorCount) : 0,
+        forum: seniorCount ? Math.round(seniorForumSum / seniorCount) : 0,
+        discord: seniorCount ? Math.round(seniorDiscordSum / seniorCount) : 0,
+        reliability: seniorTotalEligible ? Math.round((seniorMetCount / seniorTotalEligible) * 100) : 0
+    });
+
+    return individuals;
   }, [initialData, compTimeMode, compMonth, compRange]);
 
   const toggleCompare = (name) => {
@@ -283,6 +319,7 @@ export default function StatisticsClient({ initialData }) {
   };
 
   const comparisonData = compareSelected.map(name => comparePerformance.find(s => s.name === name)).filter(Boolean);
+
   const isAllSupportSelected = activeStaffOptions.filter(s => s.rank === 'Support').length > 0 && activeStaffOptions.filter(s => s.rank === 'Support').every(s => compareSelected.includes(s.name));
   const isAllSeniorSelected = activeStaffOptions.filter(s => s.rank === 'Senior Support').length > 0 && activeStaffOptions.filter(s => s.rank === 'Senior Support').every(s => compareSelected.includes(s.name));
 
@@ -398,6 +435,7 @@ export default function StatisticsClient({ initialData }) {
         )}
       </section>
 
+      {/* TABLE DATA-VIEW FOR CUSTOM COMPARISON */}
       <section className="relative z-30 bg-zinc-900/60 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-10 shadow-xl">
          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6 mb-8 border-b border-white/5 pb-6">
             <div>
