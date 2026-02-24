@@ -118,23 +118,28 @@ export default async function Home() {
 
     const delay = ms => new Promise(res => setTimeout(res, ms));
 
+    // DISCORD ID FIX: Will output raw text if you type a non-numeric username.
     if (process.env.DISCORD_BOT_TOKEN && uniqueDiscordIds.length > 0) {
       for (const id of uniqueDiscordIds) {
         try {
           const idStr = String(id).trim();
-          const res = await fetch(`https://discord.com/api/v10/users/${idStr}`, {
-            headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}` },
-            cache: 'no-store' 
-          });
-          if (res.ok) {
-            const data = await res.json();
-            discordNames[id] = data.global_name || data.username;
+          if (/^\d{17,20}$/.test(idStr)) {
+            const res = await fetch(`https://discord.com/api/v10/users/${idStr}`, {
+              headers: { Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}` },
+              cache: 'no-store' 
+            });
+            if (res.ok) {
+              const data = await res.json();
+              discordNames[id] = data.global_name || data.username;
+            } else {
+              discordNames[id] = idStr; 
+            }
+            await delay(100); 
           } else {
-            discordNames[id] = "Not Found";
+            discordNames[id] = idStr; 
           }
-          await delay(100); 
         } catch (err) {
-          discordNames[id] = "Error";
+          discordNames[id] = String(id); 
         }
       }
     }
@@ -182,7 +187,7 @@ export default async function Home() {
         totalForum: parseStat(row.get('Total Forum Reports')),
         totalDiscord: parseStat(row.get('Total Discord')),
         strike: strikeCount,
-        loaDays: parseStat(row.get('LOA Days') || row.get('LOA') || 0) // Pulls absolute truth from DB
+        loaDays: parseStat(row.get('LOA Days') || row.get('LOA') || 0)
       });
     });
 
