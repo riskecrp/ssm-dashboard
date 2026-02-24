@@ -88,22 +88,23 @@ export default function StatisticsClient({ initialData }) {
        if (!h) return null;
        
        const igTarget = Math.max(0, 30 - (h.loaDays || 0));
+       const igGraceTarget = Math.max(0, igTarget - 5);
        const isSenior = s.rank === 'Senior Support';
        const forumTarget = isSenior ? 5 : 0;
 
-       const metIG = h.newIG >= igTarget;
-       const graceIG = h.newIG >= 25 && !metIG;
+       const missedIG = h.newIG < igGraceTarget;
        const metForum = isSenior ? h.newForum >= forumTarget : true;
        
-       const status = (metIG && metForum) ? 'MET' : (graceIG && metForum) ? 'GRACE' : 'MISSED';
-       
-       if (status !== 'MISSED') return null; 
+       // If they hit grace or target for IG, AND met forum, they are safe.
+       if (!missedIG && metForum) return null; 
        if (h.strike > 0) return null; 
        
        const hasException = s.spokenToLogs?.some(log => log.note.includes(`METRIC EXCEPTION (${monthStr})`));
        if (hasException) return null; 
 
-       return { ...s, monthData: h, igTarget, forumTarget, isSenior };
+       const onlyForumMissed = !missedIG && !metForum;
+
+       return { ...s, monthData: h, igTarget, forumTarget, isSenior, onlyForumMissed, missedIG };
     }).filter(Boolean);
   }, [activeStaff, mostRecentMonth, dismissedEvaluations]);
 
@@ -160,15 +161,16 @@ export default function StatisticsClient({ initialData }) {
     
     const historyWithQuota = data.history.slice(0, 6).map(h => {
       const igTarget = Math.max(0, 30 - (h.loaDays || 0));
+      const igGraceTarget = Math.max(0, igTarget - 5);
       const forumTarget = isSenior ? 5 : 0;
       
       const metIG = h.newIG >= igTarget;
-      const graceIG = h.newIG >= 25 && !metIG;
+      const graceIG = h.newIG >= igGraceTarget && !metIG;
       const metForum = isSenior ? h.newForum >= forumTarget : true;
       
       const status = (metIG && metForum) ? 'MET' : (graceIG && metForum) ? 'GRACE' : 'MISSED';
       
-      return { ...h, status, igTarget, forumTarget, isSenior };
+      return { ...h, status, igTarget, igGraceTarget, forumTarget, isSenior };
     });
     
     const metCount = historyWithQuota.filter(h => h.status !== 'MISSED').length;
@@ -187,9 +189,10 @@ export default function StatisticsClient({ initialData }) {
       
       const calculateStatus = (h) => {
          const igTarget = Math.max(0, 30 - (h.loaDays || 0));
+         const igGraceTarget = Math.max(0, igTarget - 5);
          const metForum = isSenior ? h.newForum >= 5 : true;
          const metIG = h.newIG >= igTarget;
-         const graceIG = h.newIG >= 25 && !metIG;
+         const graceIG = h.newIG >= igGraceTarget && !metIG;
          return (metIG && metForum) || (graceIG && metForum); 
       };
 
@@ -285,14 +288,18 @@ export default function StatisticsClient({ initialData }) {
                     <span className="text-[8px] uppercase tracking-widest text-red-300 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20">{s.isSenior ? 'Senior' : 'Support'}</span>
                   </div>
                   <div className="flex justify-between text-[10px] font-mono text-zinc-400 bg-white/5 p-2 rounded-lg">
-                    <span>IG: <span className="text-red-400 font-bold">{s.monthData.newIG}</span> / {s.igTarget}</span>
+                    <span>IG: <span className={s.missedIG ? 'text-red-400 font-bold' : 'text-zinc-400'}>{s.monthData.newIG}</span> / {s.igTarget}</span>
                     {s.isSenior && (
-                      <span>FR: <span className={s.monthData.newForum < s.forumTarget ? 'text-red-400 font-bold' : 'text-amber-400 font-bold'}>{s.monthData.newForum}</span> / {s.forumTarget}</span>
+                      <span>FR: <span className={s.monthData.newForum < s.forumTarget ? 'text-red-400 font-bold' : 'text-zinc-400'}>{s.monthData.newForum}</span> / {s.forumTarget}</span>
                     )}
                   </div>
                   <div className="flex gap-2 mt-1">
                     <button disabled={processing === `strike-${s.name}`} onClick={() => handleConfirmStrike(s.name)} className="flex-1 py-2 bg-red-600/80 hover:bg-red-500 rounded-lg text-[9px] font-bold text-white uppercase tracking-widest transition-all shadow-md">{processing === `strike-${s.name}` ? '...' : 'Strike Task'}</button>
-                    <button onClick={() => setExceptionModal({ isOpen: true, name: s.name, reason: "" })} className="flex-1 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-[9px] font-bold text-zinc-300 uppercase tracking-widest transition-all">Exception</button>
+                    {s.onlyForumMissed ? (
+                      <button onClick={() => setDismissedEvaluations(prev => [...prev, s.name])} className="flex-1 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-[9px] font-bold text-zinc-300 uppercase tracking-widest transition-all">Dismiss</button>
+                    ) : (
+                      <button onClick={() => setExceptionModal({ isOpen: true, name: s.name, reason: "" })} className="flex-1 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-[9px] font-bold text-zinc-300 uppercase tracking-widest transition-all">Exception</button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -482,18 +489,18 @@ function HistoryLedger({ title, data }) {
         {data.map((h, i) => {
           const badgeClass = h.status === 'MET' ? 'bg-emerald-500/20 text-emerald-400' : h.status === 'GRACE' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400';
           const borderClass = h.status === 'MET' ? 'border-emerald-500/20' : h.status === 'GRACE' ? 'border-yellow-500/20' : 'border-red-500/20';
-          const igClass = h.newIG >= h.igTarget ? 'text-emerald-400' : h.newIG >= 25 ? 'text-yellow-400' : 'text-red-400';
+          const igClass = h.newIG >= h.igTarget ? 'text-emerald-400 font-bold' : h.newIG >= h.igGraceTarget ? 'text-yellow-400 font-bold' : 'text-red-400 font-bold';
           
           return (
             <div key={i} className={`bg-white/[0.02] border ${borderClass} p-4 rounded-xl relative overflow-hidden`}>
               <div className={`absolute top-0 right-0 px-2 py-1 text-[7px] font-black uppercase tracking-tighter rounded-bl-lg ${badgeClass}`}>{h.status}</div>
               <div className="text-[10px] text-zinc-400 font-bold font-mono uppercase tracking-widest mb-3">{h.month.substring(3)}</div>
               <div className="space-y-2 font-mono text-[10px]">
-                <div className="flex justify-between border-b border-white/5 pb-1"><span className="text-zinc-500">In-Game Reports</span><span className={igClass}>{h.newIG} <span className="text-zinc-700">/ {h.igTarget}</span></span></div>
+                <div className="flex justify-between border-b border-white/5 pb-1"><span className="text-zinc-500">In-Game Reports</span><span className={igClass}>{h.newIG} <span className="text-zinc-700 font-normal">/ {h.igTarget}</span></span></div>
                 {h.isSenior && (
-                  <div className="flex justify-between border-b border-white/5 pb-1"><span className="text-zinc-500">Forum Reports</span><span className={h.newForum >= h.forumTarget ? 'text-amber-400' : 'text-red-400'}>{h.newForum} <span className="text-zinc-700">/ {h.forumTarget}</span></span></div>
+                  <div className="flex justify-between border-b border-white/5 pb-1"><span className="text-zinc-500">Forum Reports</span><span className={h.newForum >= h.forumTarget ? 'text-amber-400 font-bold' : 'text-red-400 font-bold'}>{h.newForum} <span className="text-zinc-700 font-normal">/ {h.forumTarget}</span></span></div>
                 )}
-                <div className="flex justify-between"><span className="text-zinc-500">Discord Tickets</span><span className="text-indigo-400">{h.newDiscord}</span></div>
+                <div className="flex justify-between"><span className="text-zinc-500">Discord Tickets</span><span className="text-indigo-400 font-bold">{h.newDiscord}</span></div>
               </div>
             </div>
           );
