@@ -5,7 +5,9 @@ import { manageTask, pingDiscordTask } from '../actions';
 export default function TasksClient({ initialTasks, ssmNames }) {
   const [viewMode, setViewMode] = useState('Pending');
   const [openDropdown, setOpenDropdown] = useState(null);
+  
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editModal, setEditModal] = useState({ isOpen: false, id: "", title: "", description: "", target: "" });
   const [processing, setProcessing] = useState(null);
 
   const [newTask, setNewTask] = useState({ title: "", description: "", target: "SSM" });
@@ -29,6 +31,20 @@ export default function TasksClient({ initialTasks, ssmNames }) {
     setProcessing(null);
     setIsAddModalOpen(false);
     setNewTask({ title: "", description: "", target: "SSM" });
+  };
+
+  const handleEditTask = async () => {
+    if (!editModal.title.trim()) return;
+    setProcessing('editing');
+    await manageTask({ 
+        action: 'Edit', 
+        taskId: editModal.id, 
+        newTitle: editModal.title, 
+        newDescription: editModal.description, 
+        newTarget: editModal.target 
+    });
+    setProcessing(null);
+    setEditModal({ isOpen: false, id: "", title: "", description: "", target: "" });
   };
 
   const handleAction = async (taskId, action, claimName = '') => {
@@ -64,7 +80,15 @@ export default function TasksClient({ initialTasks, ssmNames }) {
           <div key={task.id} className="bg-zinc-900/80 backdrop-blur-2xl border border-white/10 rounded-[2rem] p-8 shadow-[0_16px_40px_rgba(0,0,0,0.6)] flex flex-col hover:-translate-y-2 hover:border-indigo-500/40 hover:shadow-[0_20px_80px_rgba(79,70,229,0.3)] transition-all duration-500">
              <div className="flex justify-between items-start mb-4 gap-4">
                 <div className="text-[10px] text-zinc-500 font-mono tracking-widest font-bold">{task.timestamp}</div>
-                <div className="text-[9px] uppercase tracking-widest font-bold bg-white/5 text-zinc-300 px-3 py-1 rounded-lg border border-white/10">{task.target}</div>
+                <div className="flex gap-2 items-center">
+                  {viewMode === 'Pending' && (
+                    <>
+                      <button disabled={processing === `SilentDelete-${task.id}`} onClick={(e) => { e.stopPropagation(); handleAction(task.id, 'SilentDelete'); }} className="text-zinc-600 hover:text-red-400 font-black text-xs transition-colors" title="Delete without logging">✕</button>
+                      <button onClick={(e) => { e.stopPropagation(); setEditModal({ isOpen: true, id: task.id, title: task.title, description: task.description || '', target: task.target || 'SSM' }); }} className="text-[9px] uppercase tracking-widest font-bold bg-white/5 hover:bg-white/10 text-zinc-400 transition-colors px-2 py-1 rounded border border-white/10">Edit</button>
+                    </>
+                  )}
+                  <div className="text-[9px] uppercase tracking-widest font-bold bg-white/5 text-zinc-300 px-3 py-1 rounded-lg border border-white/10">{task.target}</div>
+                </div>
              </div>
              
              <h3 className="text-xl font-bold text-white mb-2 leading-tight">{task.title}</h3>
@@ -90,7 +114,7 @@ export default function TasksClient({ initialTasks, ssmNames }) {
              ) : (
                 <div className="mt-auto border-t border-white/5 pt-6 flex justify-between items-center">
                   <div className="text-[10px] text-emerald-400 font-bold uppercase tracking-widest">Completed by {task.claimedBy || 'Unknown'}</div>
-                  <button disabled={processing === `Delete-${task.id}`} onClick={() => handleAction(task.id, 'Delete')} className="text-[10px] text-red-400 hover:text-red-300 font-bold uppercase tracking-widest">Delete</button>
+                  <button disabled={processing === `Delete-${task.id}`} onClick={() => handleAction(task.id, 'Delete')} className="text-[10px] text-red-400 hover:text-red-300 font-bold uppercase tracking-widest">Delete Log</button>
                 </div>
              )}
           </div>
@@ -116,6 +140,26 @@ export default function TasksClient({ initialTasks, ssmNames }) {
               <div className="flex gap-4">
                 <button onClick={() => setIsAddModalOpen(false)} className="flex-1 text-zinc-500 font-bold uppercase text-xs hover:text-white transition-colors">Cancel</button>
                 <button disabled={processing === 'creating'} onClick={handleCreateTask} className="flex-1 py-4 bg-indigo-600/80 hover:bg-indigo-500 backdrop-blur-md border border-indigo-400/50 rounded-xl font-bold text-white uppercase text-xs transition-all shadow-[0_0_20px_rgba(79,70,229,0.4)]">{processing === 'creating' ? 'Deploying...' : 'Deploy Task'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editModal.isOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-md p-4">
+          <div className="bg-zinc-900/90 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 w-full max-w-md shadow-[0_0_60px_rgba(0,0,0,0.8)] relative overflow-hidden">
+            <div className="absolute -top-40 -left-40 w-96 h-96 bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none transition-all duration-700" />
+            <div className="relative z-10">
+              <h3 className="text-3xl font-light text-white mb-8 tracking-tight">Edit Task</h3>
+              <div className="space-y-5 mb-8">
+                <div><label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 block font-bold">Target (Ping)</label><input type="text" className="w-full p-4 rounded-2xl bg-black/40 border border-white/5 text-white outline-none focus:border-indigo-500 transition-all shadow-inner text-sm" value={editModal.target} onChange={(e) => setEditModal({...editModal, target: e.target.value})} /></div>
+                <div><label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 block font-bold">Task Title</label><input type="text" className="w-full p-4 rounded-2xl bg-black/40 border border-white/5 text-white outline-none focus:border-indigo-500 transition-all shadow-inner text-sm" value={editModal.title} onChange={(e) => setEditModal({...editModal, title: e.target.value})} /></div>
+                <div><label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 block font-bold">Description</label><textarea className="w-full h-32 p-4 rounded-2xl bg-black/40 border border-white/5 text-white outline-none focus:border-indigo-500 transition-all shadow-inner text-sm custom-scrollbar" value={editModal.description} onChange={(e) => setEditModal({...editModal, description: e.target.value})} /></div>
+              </div>
+              <div className="flex gap-4">
+                <button onClick={() => setEditModal({isOpen: false, id: "", title: "", description: "", target: ""})} className="flex-1 text-zinc-500 font-bold uppercase text-xs hover:text-white transition-colors">Cancel</button>
+                <button disabled={processing === 'editing'} onClick={handleEditTask} className="flex-1 py-4 bg-indigo-600/80 hover:bg-indigo-500 backdrop-blur-md border border-indigo-400/50 rounded-xl font-bold text-white uppercase text-xs transition-all shadow-[0_0_20px_rgba(79,70,229,0.4)]">{processing === 'editing' ? 'Saving...' : 'Save Changes'}</button>
               </div>
             </div>
           </div>
