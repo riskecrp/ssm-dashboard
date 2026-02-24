@@ -45,10 +45,6 @@ export default function StatisticsClient({ initialData }) {
   const [lbMonth, setLbMonth] = useState('');
   const [lbRange, setLbRange] = useState({ start: '', end: '' });
 
-  const [rankTimeMode, setRankTimeMode] = useState('Monthly'); 
-  const [rankMonth, setRankMonth] = useState('');
-  const [rankRange, setRankRange] = useState({ start: '', end: '' });
-
   const [compTimeMode, setCompTimeMode] = useState('Monthly');
   const [compMonth, setCompMonth] = useState('');
   const [compRange, setCompRange] = useState({ start: '', end: '' });
@@ -74,11 +70,10 @@ export default function StatisticsClient({ initialData }) {
     const sorted = Array.from(months).sort((a, b) => new Date(b) - new Date(a));
     if (sorted.length > 0) {
       if (!lbMonth) setLbMonth(sorted[0]);
-      if (!rankMonth) setRankMonth(sorted[0]);
       if (!compMonth) setCompMonth(sorted[0]);
     }
     return sorted;
-  }, [initialData, lbMonth, rankMonth, compMonth]);
+  }, [initialData, lbMonth, compMonth]);
 
   const mostRecentMonth = availableMonths[0];
 
@@ -97,16 +92,16 @@ export default function StatisticsClient({ initialData }) {
        const forumTarget = isSenior ? 5 : 0;
 
        const metIG = h.newIG >= igTarget;
-       const graceIG = h.newIG >= 25;
+       const graceIG = h.newIG >= 25 && !metIG;
        const metForum = isSenior ? h.newForum >= forumTarget : true;
        
        const status = (metIG && metForum) ? 'MET' : (graceIG && metForum) ? 'GRACE' : 'MISSED';
        
-       if (status !== 'MISSED') return null; // Only show those who entirely failed
-       if (h.strike > 0) return null; // Already struck globally
+       if (status !== 'MISSED') return null; 
+       if (h.strike > 0) return null; 
        
        const hasException = s.spokenToLogs?.some(log => log.note.includes(`METRIC EXCEPTION (${monthStr})`));
-       if (hasException) return null; // Already excused globally
+       if (hasException) return null; 
 
        return { ...s, monthData: h, igTarget, forumTarget, isSenior };
     }).filter(Boolean);
@@ -127,50 +122,6 @@ export default function StatisticsClient({ initialData }) {
     setProcessing(null);
     setExceptionModal({ isOpen: false, name: "", reason: "" });
   };
-
-  const rankStats = useMemo(() => {
-    const stats = {
-      support: { met: 0, total: 0, igSum: 0, forumSum: 0 },
-      senior: { met: 0, total: 0, igSum: 0, forumSum: 0 }
-    };
-
-    initialData.forEach(staff => {
-      const isSenior = staff.rank === 'Senior Support';
-      const category = isSenior ? stats.senior : stats.support;
-      
-      let validHistory = [];
-      if (rankTimeMode === 'Overall') validHistory = staff.history;
-      else if (rankTimeMode === 'Monthly') validHistory = staff.history.filter(h => h.month === rankMonth);
-      else if (rankTimeMode === 'Range') {
-        const startMs = new Date(rankRange.start).getTime() || 0;
-        const endMs = new Date(rankRange.end).getTime() || Infinity;
-        validHistory = staff.history.filter(h => h.timestamp >= startMs && h.timestamp <= endMs);
-      }
-
-      validHistory.forEach(h => {
-        const igTarget = Math.max(0, 30 - (h.loaDays || 0));
-        const metForum = isSenior ? h.newForum >= 5 : true;
-        const metIG = h.newIG >= igTarget;
-        const graceIG = h.newIG >= 25;
-        
-        // Count as reliable if they Met or hit the Grace threshold
-        const met = (metIG && metForum) || (graceIG && metForum);
-
-        category.total++;
-        if (met) category.met++;
-        category.igSum += h.newIG;
-        if (isSenior) category.forumSum += h.newForum;
-      });
-    });
-
-    const calcRel = (cat) => cat.total > 0 ? Math.round((cat.met / cat.total) * 100) : 0;
-    const calcAvg = (sum, total) => total > 0 ? (sum / total).toFixed(1) : 0;
-
-    return {
-      support: { rel: calcRel(stats.support), avgIG: calcAvg(stats.support.igSum, stats.support.total) },
-      senior: { rel: calcRel(stats.senior), avgIG: calcAvg(stats.senior.igSum, stats.senior.total), avgForum: calcAvg(stats.senior.forumSum, stats.senior.total) }
-    };
-  }, [initialData, rankTimeMode, rankMonth, rankRange]);
 
   const lifetimeTotals = useMemo(() => {
     return initialData.reduce((acc, staff) => {
@@ -212,7 +163,7 @@ export default function StatisticsClient({ initialData }) {
       const forumTarget = isSenior ? 5 : 0;
       
       const metIG = h.newIG >= igTarget;
-      const graceIG = h.newIG >= 25;
+      const graceIG = h.newIG >= 25 && !metIG;
       const metForum = isSenior ? h.newForum >= forumTarget : true;
       
       const status = (metIG && metForum) ? 'MET' : (graceIG && metForum) ? 'GRACE' : 'MISSED';
@@ -227,7 +178,10 @@ export default function StatisticsClient({ initialData }) {
   }, [initialData, selectedStaffName]);
 
   const comparePerformance = useMemo(() => {
-    return initialData.map(s => {
+    let supportIgSum = 0, supportForumSum = 0, supportDiscordSum = 0, supportMetCount = 0, supportTotalEligible = 0, supportCount = 0;
+    let seniorIgSum = 0, seniorForumSum = 0, seniorDiscordSum = 0, seniorMetCount = 0, seniorTotalEligible = 0, seniorCount = 0;
+
+    const individuals = initialData.map(s => {
       let ig = 0, forum = 0, discord = 0, metCount = 0, totalEligible = 0;
       const isSenior = s.rank === 'Senior Support';
       
@@ -235,8 +189,8 @@ export default function StatisticsClient({ initialData }) {
          const igTarget = Math.max(0, 30 - (h.loaDays || 0));
          const metForum = isSenior ? h.newForum >= 5 : true;
          const metIG = h.newIG >= igTarget;
-         const graceIG = h.newIG >= 25;
-         return (metIG && metForum) || (graceIG && metForum); // True if Reliable
+         const graceIG = h.newIG >= 25 && !metIG;
+         return (metIG && metForum) || (graceIG && metForum); 
       };
 
       if (compTimeMode === 'Overall') {
@@ -262,9 +216,36 @@ export default function StatisticsClient({ initialData }) {
            if (calculateStatus(h)) metCount++;
         });
       }
+
+      if (isSenior) {
+          seniorIgSum += ig; seniorForumSum += forum; seniorDiscordSum += discord; seniorCount++;
+          seniorMetCount += metCount; seniorTotalEligible += totalEligible;
+      } else {
+          supportIgSum += ig; supportForumSum += forum; supportDiscordSum += discord; supportCount++;
+          supportMetCount += metCount; supportTotalEligible += totalEligible;
+      }
+
       const reliability = totalEligible > 0 ? Math.round((metCount / totalEligible) * 100) : 0;
       return { name: s.name, ig, forum, discord, reliability, rank: s.rank };
     });
+
+    individuals.push({
+        name: '[Group] All Support', rank: 'Support', isGroup: true,
+        ig: supportCount ? Math.round(supportIgSum / supportCount) : 0,
+        forum: supportCount ? Math.round(supportForumSum / supportCount) : 0,
+        discord: supportCount ? Math.round(supportDiscordSum / supportCount) : 0,
+        reliability: supportTotalEligible ? Math.round((supportMetCount / supportTotalEligible) * 100) : 0
+    });
+    
+    individuals.push({
+        name: '[Group] All Senior Support', rank: 'Senior Support', isGroup: true,
+        ig: seniorCount ? Math.round(seniorIgSum / seniorCount) : 0,
+        forum: seniorCount ? Math.round(seniorForumSum / seniorCount) : 0,
+        discord: seniorCount ? Math.round(seniorDiscordSum / seniorCount) : 0,
+        reliability: seniorTotalEligible ? Math.round((seniorMetCount / seniorTotalEligible) * 100) : 0
+    });
+
+    return individuals;
   }, [initialData, compTimeMode, compMonth, compRange]);
 
   const toggleCompare = (name) => {
@@ -332,69 +313,55 @@ export default function StatisticsClient({ initialData }) {
         </section>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 relative z-40">
-        <section className="xl:col-span-1 bg-zinc-900/60 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 shadow-xl flex flex-col gap-6">
-           <div className="flex flex-col xl:flex-row justify-between items-start xl:items-end gap-4 border-b border-white/5 pb-4 mb-2">
-              <div>
-                <h2 className="text-2xl font-light text-white tracking-tight">Rank Audit</h2>
-                <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-1 font-bold">Structural Benchmark</p>
-              </div>
-              <TimeFilter mode={rankTimeMode} setMode={setRankTimeMode} month={rankMonth} setMonth={setRankMonth} range={rankRange} setRange={setRankRange} availableMonths={availableMonths} dropKey="rank" openDropdown={openDropdown} setOpenDropdown={setOpenDropdown} />
-           </div>
-           <RankCard title="Support Personnel" stats={rankStats.support} color="text-emerald-400" glow="bg-emerald-500/5" logic="30 In-Game Reports (-LOA)" />
-           <RankCard title="Senior Support" stats={rankStats.senior} color="text-indigo-400" glow="bg-indigo-500/5" logic="30 IG & 5 Forum (-LOA)" />
-        </section>
-
-        <section className="xl:col-span-2 bg-zinc-900/60 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 shadow-xl flex flex-col">
-          <div className="relative z-50 border-b border-white/5 pb-6 mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div>
-              <h2 className="text-2xl font-light text-white tracking-tight">Individual Analysis</h2>
-              <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-1 font-bold">Personnel Deep-Dive</p>
+      <section className="relative z-40 bg-zinc-900/60 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-8 shadow-xl flex flex-col">
+        <div className="relative z-50 border-b border-white/5 pb-6 mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <h2 className="text-2xl font-light text-white tracking-tight">Individual Analysis</h2>
+            <p className="text-[10px] text-zinc-500 uppercase tracking-widest mt-1 font-bold">Personnel Deep-Dive</p>
+          </div>
+          <div className="relative w-full md:w-auto" onClick={(e) => e.stopPropagation()}>
+            <div onClick={() => setOpenDropdown(openDropdown === 'staffSelect' ? null : 'staffSelect')} className="bg-black/40 border border-white/10 text-white text-sm font-bold px-6 py-3 rounded-xl cursor-pointer flex items-center justify-between w-full md:min-w-[280px] hover:border-indigo-500/50 transition-all">
+              <span>{selectedStaffName || "Select Staff Member..."}</span><span className="text-[9px] text-zinc-500 ml-4">▼</span>
             </div>
-            <div className="relative w-full md:w-auto" onClick={(e) => e.stopPropagation()}>
-              <div onClick={() => setOpenDropdown(openDropdown === 'staffSelect' ? null : 'staffSelect')} className="bg-black/40 border border-white/10 text-white text-sm font-bold px-6 py-3 rounded-xl cursor-pointer flex items-center justify-between w-full md:min-w-[280px] hover:border-indigo-500/50 transition-all">
-                <span>{selectedStaffName || "Select Staff Member..."}</span><span className="text-[9px] text-zinc-500 ml-4">▼</span>
+            {openDropdown === 'staffSelect' && (
+              <div className="absolute top-full right-0 mt-2 w-full bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl py-2 max-h-[350px] overflow-y-auto custom-scrollbar z-[120]">
+                {staffOptions.map(s => (
+                  <div key={s.name} onClick={() => { setSelectedStaffName(s.name); setOpenDropdown(null); }} className={`px-5 py-3 text-sm font-bold cursor-pointer transition-colors flex justify-between items-center ${selectedStaffName === s.name ? 'bg-indigo-500/20 text-white' : 'text-zinc-400 hover:bg-white/5 hover:text-white'}`}>
+                    <span>{s.name}</span>
+                    {!s.isActive && <span className="text-[8px] uppercase tracking-widest text-red-400 bg-red-400/10 px-2 py-0.5 rounded border border-red-400/20">Inactive</span>}
+                  </div>
+                ))}
               </div>
-              {openDropdown === 'staffSelect' && (
-                <div className="absolute top-full right-0 mt-2 w-full bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl py-2 max-h-[350px] overflow-y-auto custom-scrollbar z-[120]">
-                  {staffOptions.map(s => (
-                    <div key={s.name} onClick={() => { setSelectedStaffName(s.name); setOpenDropdown(null); }} className={`px-5 py-3 text-sm font-bold cursor-pointer transition-colors flex justify-between items-center ${selectedStaffName === s.name ? 'bg-indigo-500/20 text-white' : 'text-zinc-400 hover:bg-white/5 hover:text-white'}`}>
-                      <span>{s.name}</span>
-                      {!s.isActive && <span className="text-[8px] uppercase tracking-widest text-red-400 bg-red-400/10 px-2 py-0.5 rounded border border-red-400/20">Inactive</span>}
-                    </div>
-                  ))}
-                </div>
-              )}
+            )}
+          </div>
+        </div>
+
+        {selectedStaffData ? (
+          <div className="flex-1 flex flex-col animate-in fade-in duration-500 space-y-6">
+            <div className="bg-indigo-500/5 border border-indigo-500/20 rounded-2xl p-6 flex justify-between items-center shadow-inner">
+               <div>
+                 <div className="text-[10px] text-indigo-400 uppercase tracking-[0.2em] font-black mb-1">Reliability Rating</div>
+                 <div className={`text-4xl font-light tracking-tight ${selectedStaffData.reliability >= 80 ? 'text-emerald-400' : selectedStaffData.reliability >= 50 ? 'text-amber-400' : 'text-red-400'}`}>{selectedStaffData.reliability}%</div>
+               </div>
+               <div className="text-right flex gap-6">
+                  <div><div className="text-[9px] text-zinc-500 uppercase tracking-widest mb-1 font-bold">Lifetime IG</div><div className="text-xl text-white font-light">{selectedStaffData.lifetimeIG}</div></div>
+                  <div><div className="text-[9px] text-zinc-500 uppercase tracking-widest mb-1 font-bold">Forums</div><div className="text-xl text-white font-light">{selectedStaffData.lifetimeForum}</div></div>
+                  <div><div className="text-[9px] text-zinc-500 uppercase tracking-widest mb-1 font-bold">Discord</div><div className="text-xl text-white font-light">{selectedStaffData.lifetimeDiscord}</div></div>
+               </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1">
+              <HistoryLedger title="6-Month Ledger" data={selectedStaffData.historyWithQuota} />
+              <div className="flex flex-col gap-6">
+                <DisciplineLedger title="Discipline & Feedback" strikes={selectedStaffData.strikes} logs={selectedStaffData.spokenToLogs} />
+                <LOALedger title="Leave History" data={selectedStaffData.loas} />
+              </div>
             </div>
           </div>
-
-          {selectedStaffData ? (
-            <div className="flex-1 flex flex-col animate-in fade-in duration-500 space-y-6">
-              <div className="bg-indigo-500/5 border border-indigo-500/20 rounded-2xl p-6 flex justify-between items-center shadow-inner">
-                 <div>
-                   <div className="text-[10px] text-indigo-400 uppercase tracking-[0.2em] font-black mb-1">Reliability Rating</div>
-                   <div className={`text-4xl font-light tracking-tight ${selectedStaffData.reliability >= 80 ? 'text-emerald-400' : selectedStaffData.reliability >= 50 ? 'text-amber-400' : 'text-red-400'}`}>{selectedStaffData.reliability}%</div>
-                 </div>
-                 <div className="text-right flex gap-6">
-                    <div><div className="text-[9px] text-zinc-500 uppercase tracking-widest mb-1 font-bold">Lifetime IG</div><div className="text-xl text-white font-light">{selectedStaffData.lifetimeIG}</div></div>
-                    <div><div className="text-[9px] text-zinc-500 uppercase tracking-widest mb-1 font-bold">Forums</div><div className="text-xl text-white font-light">{selectedStaffData.lifetimeForum}</div></div>
-                    <div><div className="text-[9px] text-zinc-500 uppercase tracking-widest mb-1 font-bold">Discord</div><div className="text-xl text-white font-light">{selectedStaffData.lifetimeDiscord}</div></div>
-                 </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1">
-                <HistoryLedger title="6-Month Ledger" data={selectedStaffData.historyWithQuota} />
-                <div className="flex flex-col gap-6">
-                  <DisciplineLedger title="Discipline & Feedback" strikes={selectedStaffData.strikes} logs={selectedStaffData.spokenToLogs} />
-                  <LOALedger title="Leave History" data={selectedStaffData.loas} />
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="flex-1 flex flex-col items-center justify-center opacity-30 min-h-[300px]"><div className="text-4xl mb-4">👤</div><div className="text-sm font-bold uppercase tracking-widest">Select Personnel</div></div>
-          )}
-        </section>
-      </div>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center opacity-30 min-h-[300px]"><div className="text-4xl mb-4">👤</div><div className="text-sm font-bold uppercase tracking-widest">Select Personnel</div></div>
+        )}
+      </section>
 
       <section className="relative z-30 bg-zinc-900/60 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-10 shadow-xl">
          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6 mb-8 border-b border-white/5 pb-6">
@@ -411,6 +378,15 @@ export default function StatisticsClient({ initialData }) {
                 </div>
                 {openDropdown === 'compareSelect' && (
                   <div className="absolute top-full right-0 mt-2 w-full bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl py-2 max-h-[300px] overflow-y-auto custom-scrollbar z-[120]">
+                    <div onClick={() => toggleCompare('[Group] All Support')} className={`px-5 py-3 text-xs font-bold cursor-pointer transition-colors flex justify-between items-center ${compareSelected.includes('[Group] All Support') ? 'bg-indigo-500/20 text-white' : 'text-amber-400 hover:bg-white/5 hover:text-white'}`}>
+                      <span>[Group] All Support</span>
+                      {compareSelected.includes('[Group] All Support') && <span className="text-[8px] uppercase tracking-widest text-indigo-400 font-black">Selected</span>}
+                    </div>
+                    <div onClick={() => toggleCompare('[Group] All Senior Support')} className={`px-5 py-3 text-xs font-bold cursor-pointer transition-colors flex justify-between items-center ${compareSelected.includes('[Group] All Senior Support') ? 'bg-indigo-500/20 text-white' : 'text-amber-400 hover:bg-white/5 hover:text-white'}`}>
+                      <span>[Group] All Senior Support</span>
+                      {compareSelected.includes('[Group] All Senior Support') && <span className="text-[8px] uppercase tracking-widest text-indigo-400 font-black">Selected</span>}
+                    </div>
+                    <div className="border-t border-zinc-700 my-1" />
                     {staffOptions.map(s => (
                       <div key={s.name} onClick={() => toggleCompare(s.name)} className={`px-5 py-3 text-xs font-bold cursor-pointer transition-colors flex justify-between items-center ${compareSelected.includes(s.name) ? 'bg-indigo-500/20 text-white' : 'text-zinc-400 hover:bg-white/5 hover:text-white'}`}>
                         <span>{s.name}</span>
@@ -428,7 +404,7 @@ export default function StatisticsClient({ initialData }) {
              {comparisonData.map((staff, i) => (
                <div key={i} className="bg-black/30 border border-white/5 rounded-3xl p-8 min-w-[280px] shadow-inner relative group hover:border-indigo-500/30 transition-all">
                  <button onClick={() => toggleCompare(staff.name)} className="absolute top-4 right-4 text-zinc-600 hover:text-red-400 transition-colors font-bold text-lg">✕</button>
-                 <h3 className="text-2xl font-light text-white tracking-tight mb-1">{staff.name}</h3>
+                 <h3 className={`text-2xl font-light tracking-tight mb-1 ${staff.isGroup ? 'text-amber-400' : 'text-white'}`}>{staff.name}</h3>
                  <div className={`inline-block px-3 py-1 rounded-md text-[8px] font-bold uppercase tracking-widest mb-6 ${staff.rank === 'Senior Support' ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' : 'bg-white/5 text-zinc-400 border border-white/10'}`}>{staff.rank}</div>
                  
                  <div className="bg-white/[0.02] border border-white/5 rounded-xl p-4 text-center mb-6">
@@ -438,7 +414,9 @@ export default function StatisticsClient({ initialData }) {
 
                  <div className="space-y-4 font-mono text-sm">
                    <div className="flex justify-between items-center border-b border-white/5 pb-2"><span className="text-zinc-500 text-xs">In-Game</span><span className="text-emerald-400 font-bold">{staff.ig}</span></div>
-                   <div className="flex justify-between items-center border-b border-white/5 pb-2"><span className="text-zinc-500 text-xs">Forum</span><span className="text-amber-400 font-bold">{staff.forum}</span></div>
+                   {staff.rank === 'Senior Support' && (
+                     <div className="flex justify-between items-center border-b border-white/5 pb-2"><span className="text-zinc-500 text-xs">Forum</span><span className="text-amber-400 font-bold">{staff.forum}</span></div>
+                   )}
                    <div className="flex justify-between items-center"><span className="text-zinc-500 text-xs">Discord</span><span className="text-indigo-400 font-bold">{staff.discord}</span></div>
                  </div>
                </div>
@@ -496,27 +474,6 @@ function LeaderboardColumn({ title, data, color, field }) {
   );
 }
 
-function RankCard({ title, stats, color, glow, logic }) {
-  return (
-    <div className={`relative ${glow} border border-white/5 rounded-2xl p-6 shadow-inner flex flex-col group`}>
-      <div className="mb-6">
-        <h3 className={`text-xl font-light ${color} tracking-tight`}>{title}</h3>
-        <p className="text-[8px] text-zinc-500 uppercase tracking-widest mt-1 font-bold">{logic}</p>
-      </div>
-      <div className="bg-black/30 border border-white/5 rounded-xl p-4 text-center mb-6">
-        <div className="text-[8px] text-zinc-500 uppercase tracking-widest font-black mb-1">Timeframe Hit Rate</div>
-        <div className={`text-3xl font-light ${color}`}>{stats.rel}%</div>
-      </div>
-      <div className="bg-black/20 rounded-xl p-4 border border-white/5 font-mono text-[10px]">
-        <div className="flex justify-between text-zinc-400 mb-2"><span>Avg. IG Reports:</span><span className="text-emerald-400">{stats.avgIG}</span></div>
-        {stats.avgForum !== undefined && (
-          <div className="flex justify-between text-zinc-400"><span>Avg. Forum Reports:</span><span className="text-amber-400">{stats.avgForum}</span></div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function HistoryLedger({ title, data }) {
   return (
     <div className="bg-black/40 border border-white/5 rounded-2xl p-6 flex flex-col h-[400px] shadow-inner">
@@ -552,7 +509,7 @@ function DisciplineLedger({ title, strikes, logs }) {
       <h3 className="text-[10px] text-zinc-500 uppercase tracking-[0.2em] font-black mb-4 border-b border-white/5 pb-3">{title}</h3>
       <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
         {strikes.map((s, i) => (
-          <div key={`s-${i}`} className="bg-red-500/5 border border-red-500/20 p-3 rounded-xl flex items-start gap-3"><div className="text-red-500 text-[8px] mt-1">🔴</div><div><div className="text-[9px] text-red-400/80 font-mono uppercase tracking-widest mb-0.5">{s.month.substring(3)}</div><div className="text-[10px] text-zinc-200">Strike ({s.strike})</div></div></div>
+          <div key={`s-${i}`} className="bg-red-500/5 border border-red-500/20 p-3 rounded-xl flex items-start gap-3"><div className="text-red-500 text-[8px] mt-1">🔴</div><div><div className="text-[9px] text-red-400/80 font-mono uppercase tracking-widest mb-0.5">{s.month.substring(3)}</div><div className="text-[10px] text-zinc-200">Strike Issued</div></div></div>
         ))}
         {logs.map((log, i) => (
           <div key={`l-${i}`} className="bg-fuchsia-500/5 border border-fuchsia-500/20 p-3 rounded-xl flex items-start gap-3"><div className="text-fuchsia-500 text-[8px] mt-1">🟣</div><div><div className="text-[9px] text-fuchsia-400/80 font-mono uppercase tracking-widest mb-0.5">{log.timestamp}</div><div className="text-[10px] text-zinc-200 leading-relaxed italic">"{log.note}"</div></div></div>
