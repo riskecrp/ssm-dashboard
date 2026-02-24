@@ -90,6 +90,11 @@ export default function StatisticsClient({ initialData }) {
     });
   }, [initialData]);
 
+  // STRICTLY active staff for the Comparison Dropdowns
+  const activeStaffOptions = useMemo(() => {
+    return [...initialData].filter(s => s.isActive).sort((a, b) => a.name.localeCompare(b.name));
+  }, [initialData]);
+
   const availableMonths = useMemo(() => {
     const months = new Set();
     initialData.forEach(s => s.history.forEach(h => months.add(h.month)));
@@ -252,14 +257,14 @@ export default function StatisticsClient({ initialData }) {
 
   const toggleCompare = (name) => {
     if (name === '[Group] All Support') {
-       const supportNames = staffOptions.filter(s => s.rank === 'Support').map(s => s.name);
+       const supportNames = activeStaffOptions.filter(s => s.rank === 'Support').map(s => s.name);
        const allSelected = supportNames.every(n => compareSelected.includes(n));
        if (allSelected) { setCompareSelected(prev => prev.filter(n => !supportNames.includes(n))); } 
        else { setCompareSelected(prev => Array.from(new Set([...prev, ...supportNames]))); }
        return;
     }
     if (name === '[Group] All Senior Support') {
-       const seniorNames = staffOptions.filter(s => s.rank === 'Senior Support').map(s => s.name);
+       const seniorNames = activeStaffOptions.filter(s => s.rank === 'Senior Support').map(s => s.name);
        const allSelected = seniorNames.every(n => compareSelected.includes(n));
        if (allSelected) { setCompareSelected(prev => prev.filter(n => !seniorNames.includes(n))); } 
        else { setCompareSelected(prev => Array.from(new Set([...prev, ...seniorNames]))); }
@@ -270,8 +275,9 @@ export default function StatisticsClient({ initialData }) {
   };
 
   const comparisonData = compareSelected.map(name => comparePerformance.find(s => s.name === name)).filter(Boolean);
-  const isAllSupportSelected = staffOptions.filter(s => s.rank === 'Support').length > 0 && staffOptions.filter(s => s.rank === 'Support').every(s => compareSelected.includes(s.name));
-  const isAllSeniorSelected = staffOptions.filter(s => s.rank === 'Senior Support').length > 0 && staffOptions.filter(s => s.rank === 'Senior Support').every(s => compareSelected.includes(s.name));
+  
+  const isAllSupportSelected = activeStaffOptions.filter(s => s.rank === 'Support').length > 0 && activeStaffOptions.filter(s => s.rank === 'Support').every(s => compareSelected.includes(s.name));
+  const isAllSeniorSelected = activeStaffOptions.filter(s => s.rank === 'Senior Support').length > 0 && activeStaffOptions.filter(s => s.rank === 'Senior Support').every(s => compareSelected.includes(s.name));
 
   return (
     <div className="p-4 md:p-8 lg:p-12 max-w-[1600px] mx-auto space-y-10 relative min-h-screen" onClick={() => setOpenDropdown(null)}>
@@ -385,7 +391,6 @@ export default function StatisticsClient({ initialData }) {
         )}
       </section>
 
-      {/* TABLE DATA-VIEW FOR CUSTOM COMPARISON */}
       <section className="relative z-30 bg-zinc-900/60 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-10 shadow-xl">
          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6 mb-8 border-b border-white/5 pb-6">
             <div>
@@ -410,7 +415,7 @@ export default function StatisticsClient({ initialData }) {
                       {isAllSeniorSelected && <span className="text-[8px] uppercase tracking-widest text-indigo-400 font-black">Selected</span>}
                     </div>
                     <div className="border-t border-zinc-700 my-1" />
-                    {staffOptions.map(s => (
+                    {activeStaffOptions.map(s => (
                       <div key={s.name} onClick={() => toggleCompare(s.name)} className={`px-5 py-3 text-xs font-bold cursor-pointer transition-colors flex justify-between items-center ${compareSelected.includes(s.name) ? 'bg-indigo-500/20 text-white' : 'text-zinc-400 hover:bg-white/5 hover:text-white'}`}>
                         <span>{s.name}</span>
                         {compareSelected.includes(s.name) && <span className="text-[8px] uppercase tracking-widest text-indigo-400 font-black">Selected</span>}
